@@ -365,3 +365,17 @@ canvas {
   opacity: 1 !important;
   visibility: visible !important;
 }
+
+/* Recording button spinning animation */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.recording-spin {
+  animation: spin 1s linear infinite;
+}

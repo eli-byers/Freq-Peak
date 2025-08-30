@@ -1335,8 +1335,13 @@ function createPlaybackBufferFromBlob(blob) {
 recordBtn.onclick = () => {
   if (!recording) {
     recording = true; // ⚡ SET FLAG FIRST - BEFORE starting any recording logic
-    recordBtn.textContent = 'Stop Recording';
+    recordBtn.title = 'Stop Recording';
     recordBtn.style.background = '#17a2b8'; // Change to blue while recording
+
+    // Add spinning animation to radius icon
+    const icon = recordBtn.querySelector('.lucide-icon');
+    icon.classList.add('recording-spin');
+
     updateModeIndicator();
 
     // 🔒 DISABLE CONTROLS during recording to prevent disruptions
@@ -1362,8 +1367,13 @@ recordBtn.onclick = () => {
     // Stop recorder with graceful termination
     stopWAVRecordingGracefully();
     recording = false;
-    recordBtn.textContent = 'Record';
+    recordBtn.title = 'Start Recording';
     recordBtn.style.background = '#dc3545'; // Back to red
+
+    // Remove spinning animation from radius icon
+    const icon = recordBtn.querySelector('.lucide-icon');
+    icon.classList.remove('recording-spin');
+
     updateModeIndicator();
 
     // 🔓 RE-ENABLE CONTROLS
