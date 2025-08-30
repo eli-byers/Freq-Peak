@@ -15,8 +15,16 @@ const progressFill = document.getElementById('progressFill');
 const currentTime = document.getElementById('currentTime');
 const totalTime = document.getElementById('totalTime');
 
-// Mode indicator
-let currentMode = 'Idle';
+// State machine for application modes
+const AppState = {
+  IDLE: 'Idle',
+  LIVE: 'Live Mode',
+  RECORDING: 'Recording Mode',
+  PLAYBACK_READY: 'Playback Mode', // Have recorded audio ready to play
+  PLAYING: 'Playback Mode' // Currently playing audio
+};
+
+let currentMode = AppState.IDLE;
 const modeIndicator = document.createElement('div');
 modeIndicator.style.cssText = 'font-size: 12px; color: #ccc; padding: 5px 10px; background: #222; border-radius: 4px;';
 document.querySelector('.header').appendChild(modeIndicator);
@@ -25,15 +33,25 @@ document.querySelector('.header').appendChild(modeIndicator);
 let recordedWavUrl = null;
 
 function updateModeIndicator() {
+  const previousMode = currentMode;
+
+  // Determine new mode based on current state
   if (recording) {
-    currentMode = 'Recording Mode';
+    currentMode = AppState.RECORDING;
   } else if (isPlaying) {
-    currentMode = 'Playback Mode';
+    currentMode = AppState.PLAYING;
+  } else if (audioBuffer && playbackBar.style.display === 'flex') {
+    currentMode = AppState.PLAYBACK_READY;
   } else if (running) {
-    currentMode = 'Live Mode';
+    currentMode = AppState.LIVE;
   } else {
-    currentMode = 'Idle';
+    currentMode = AppState.IDLE;
   }
+
+  if (previousMode !== currentMode) {
+    console.log(`Mode changed: ${previousMode} → ${currentMode}`);
+  }
+
   modeIndicator.textContent = currentMode;
 }
 
@@ -153,7 +171,8 @@ function saveSettings() {
     togglePeakHold: togglePeakHold.checked,
     peakCount: peakCount.value,
     peakDelta: peakDelta.value,
-    fftSize: fftSizeSelect.value
+    fftSize: fftSizeSelect.value,
+    deviceId: document.getElementById('deviceSelect').value
   };
   document.cookie = "spectrumSettings=" + JSON.stringify(settings) + "; path=/; max-age=31536000";
 }
@@ -172,6 +191,15 @@ function loadSettings() {
     peakCount.value = settings.peakCount;
     peakDelta.value = settings.peakDelta;
     if(settings.fftSize) fftSizeSelect.value = settings.fftSize;
+    if(settings.deviceId) {
+      // Set deviceId after devices are populated
+      setTimeout(() => {
+        const select = document.getElementById('deviceSelect');
+        if(select.querySelector(`option[value="${settings.deviceId}"]`)) {
+          select.value = settings.deviceId;
+        }
+      }, 100);
+    }
   } catch(e){}
 }
 
@@ -188,7 +216,91 @@ async function populateDevices() {
     select.appendChild(opt);
   });
 }
-populateDevices();
+
+async function requestMicPermission() {
+  try {
+    // Check if we already have microphone permission
+    const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
+    if (permissionStatus.state === 'granted') {
+      console.log('Microphone permission already granted');
+      return; // Don't request again
+    }
+
+    const deviceId = document.getElementById('deviceSelect').value;
+    safeStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        deviceId: deviceId,
+        sampleRate: 44100,
+        channelCount: 1
+      }
+    });
+    console.log('Microphone permission granted on load');
+  } catch (error) {
+    console.error('Microphone permission denied:', error);
+    alert('Microphone permission is required for this application. Please allow microphone access when prompted.');
+  }
+}
+
+async function startLiveVisualization() {
+  const deviceId = document.getElementById('deviceSelect').value;
+
+  // Check if we need a new stream (different device or no existing stream)
+  const currentDeviceId = safeStream ? safeStream.getAudioTracks()[0]?.getSettings().deviceId : null;
+  if (!safeStream || currentDeviceId !== deviceId) {
+    // Stop existing stream if any
+    if (safeStream) {
+      safeStream.getTracks().forEach(track => track.stop());
+    }
+
+    // Get new stream for the selected device
+    safeStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        deviceId: deviceId,
+        sampleRate: 44100,
+        channelCount: 1
+      }
+    });
+  }
+
+  // Set up AudioContext with this stream
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = parseInt(fftSizeSelect.value);
+  analyser.smoothingTimeConstant = 0.0;
+  bufferLength = analyser.frequencyBinCount;
+  dataArray = new Float32Array(bufferLength);
+  source = audioCtx.createMediaStreamSource(safeStream);
+
+  // Set up MediaRecorder with SAME stream
+  mediaRecorder = new MediaRecorder(safeStream, {
+    mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm'
+  });
+
+  recordedChunks = [];
+  mediaRecorder.ondataavailable = (event) => {
+    if (event.data && event.data.size > 0) {
+      recordedChunks.push(event.data);
+    }
+  };
+
+  // Connect only to analyser for visualization
+  source.connect(analyser);
+
+  if(peakHoldArray.length !== bufferLength){
+    peakHoldArray = new Float32Array(bufferLength).fill(-Infinity);
+  }
+  running = true;
+  startBtn.textContent = "Stop";
+  updateModeIndicator();
+  draw();
+}
+
+async function initApp() {
+  await populateDevices();
+  await requestMicPermission();
+}
+
+initApp();
 
 const resetAudioLevel = () => {
   const bars = document.querySelectorAll('#audioLevel .level-bar');
@@ -203,17 +315,40 @@ const resetAudioLevel = () => {
 };
 
 startBtn.onclick = async () => {
+  // If we're in playback mode, stop it and go to live mode
+  if (isPlaying) {
+    console.log('Stopping playback and switching to Live Mode');
+    if (playbackSource) {
+      playbackSource.stop();
+      playbackSource.disconnect();
+    }
+    if (audioCtx) {
+      audioCtx.close();
+    }
+    isPlaying = false;
+    playBtn.style.display = 'inline-block';
+    pauseBtn.style.display = 'none';
+    progressFill.style.width = '0%';
+    currentTime.textContent = '0:00';
+    totalTime.textContent = '0:00';
+    resetAudioLevel();
+  }
+
   if(!running){
+    console.log('Starting Live Mode');
     const deviceId = document.getElementById('deviceSelect').value;
 
-    // Get single stream for both AudioContext and MediaRecorder
-    safeStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        deviceId: deviceId,
-        sampleRate: 44100,
-        channelCount: 1
-      }
-    });
+    // Use existing stream if available and device hasn't changed
+    if (!safeStream) {
+      // No existing stream, request permission
+      safeStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          deviceId: deviceId,
+          sampleRate: 44100,
+          channelCount: 1
+        }
+      });
+    }
 
     // Set up AudioContext with this stream
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -243,16 +378,17 @@ startBtn.onclick = async () => {
       peakHoldArray = new Float32Array(bufferLength).fill(-Infinity);
     }
     running = true;
-    startBtn.textContent = "Stop";
+    startBtn.textContent = "Stop Live";
     updateModeIndicator();
     draw();
   } else {
+    console.log('Stopping Live Mode');
     running = false;
-    if (safeStream) {
-      safeStream.getTracks().forEach(track => track.stop());
+    // Don't stop the stream here, keep it for reuse
+    if (audioCtx) {
+      audioCtx.close();
     }
-    audioCtx.close();
-    startBtn.textContent = "Start";
+    startBtn.textContent = "Start Live";
     resetAudioLevel();
     updateModeIndicator();
   }
@@ -323,9 +459,14 @@ function getPeaksFromArray(arr, freqMinVal, freqMaxVal, peakCount, peakDelta){
   return selected;
 }
 
-function draw() {
-  if(!running) return;
-  requestAnimationFrame(draw);
+function drawSpectrum(isLiveMode = true) {
+  // Check if we should continue drawing based on mode
+  if (isLiveMode && !running) return;
+  if (!isLiveMode && !isPlaying) return;
+
+  // Continue the animation loop
+  requestAnimationFrame(() => drawSpectrum(isLiveMode));
+
   analyser.getFloatFrequencyData(dataArray);
 
   // Calculate RMS dB for audio level indicator
@@ -381,7 +522,9 @@ function draw() {
   const peakCountVal = parseInt(peakCount.value);
   const peakDeltaVal = parseFloat(peakDelta.value);
 
-  saveSettings();
+  if (isLiveMode) {
+    saveSettings();
+  }
 
   ctx.fillStyle = "#111";
   ctx.fillRect(0,0,width,height);
@@ -398,7 +541,7 @@ function draw() {
 
   const nyquist = audioCtx.sampleRate/2;
 
-  // live spectrum line
+  // spectrum line (color depends on mode)
   ctx.beginPath();
   for(let i=0;i<bufferLength;i++){
     const freq = i/bufferLength*nyquist;
@@ -409,7 +552,7 @@ function draw() {
     if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
     if(togglePeakHold.checked && val > peakHoldArray[i]) peakHoldArray[i] = val;
   }
-  ctx.strokeStyle = "#0ff";
+  ctx.strokeStyle = isLiveMode ? "#0ff" : "#ff6"; // Cyan for live, yellow-orange for playback
   ctx.lineWidth = 1;
   ctx.stroke();
 
@@ -475,6 +618,15 @@ function draw() {
     ctx.textAlign = "right";
     ctx.fillText(db.toFixed(0), 28, y+2);
   }
+}
+
+// Convenience functions for backward compatibility
+function draw() {
+  drawSpectrum(true); // Live mode
+}
+
+function drawPlayback() {
+  drawSpectrum(false); // Playback mode
 }
 
 canvas.addEventListener('mousemove', (e)=>{
@@ -690,9 +842,8 @@ playBtn.onclick = () => {
 
     // Reset peak hold for playback
     peakHoldArray = new Float32Array(bufferLength).fill(-Infinity);
-    running = true;
 
-    draw();
+    drawPlayback();
     updateProgress();
 
     playBtn.style.display = 'none';
@@ -718,12 +869,13 @@ let recordedSamples = [];
 
 function createWAVFile(audioData, sampleRate, numChannels = 1) {
   const length = audioData.length;
-  const arrayBuffer = new ArrayBuffer(44 + length * 2);
+  const dataSize = length * numChannels * 2;
+  const arrayBuffer = new ArrayBuffer(44 + dataSize);
   const view = new DataView(arrayBuffer);
 
   // RIFF chunk descriptor
   view.setUint32(0, 0x52494646, false); // "RIFF"
-  view.setUint32(4, arrayBuffer.byteLength - 8, true); // chunk size
+  view.setUint32(4, 36 + dataSize, true); // chunk size
   view.setUint32(8, 0x57415645, false); // "WAVE"
 
   // fmt sub-chunk
@@ -735,6 +887,10 @@ function createWAVFile(audioData, sampleRate, numChannels = 1) {
   view.setUint32(28, sampleRate * numChannels * 2, true); // byte rate
   view.setUint16(32, numChannels * 2, true); // block align
   view.setUint16(34, 16, true); // bits per sample (16-bit)
+
+  // data sub-chunk
+  view.setUint32(36, 0x64617461, false); // "data"
+  view.setUint32(40, dataSize, true); // data size
 
   // Convert Float32Array to Int16Array and write data
   const channels = [audioData];
@@ -805,7 +961,7 @@ const stopWAVRecordingGracefully = () => {
     // Convert to WAV and set up playback
     createPlaybackBufferFromBlob(recordedBlob);
 
-    // Clean up (don't touch live mode - let user control that)
+    // Clean up chunks
     recordedChunks = []; // ✅ Clean up chunks
     console.log('🎙️ PHASE 4: Recording COMPLETE - audio ready for playback/download');
   };
@@ -904,6 +1060,21 @@ function createPlaybackBufferFromBlob(blob) {
       const url = URL.createObjectURL(blob);
       recordedWavUrl = url;
 
+      // Stop live mode since we now have recorded audio ready for playback
+      if (running) {
+        running = false;
+        if (audioCtx && audioCtx.state !== 'closed') {
+          audioCtx.close();
+        }
+        startBtn.textContent = "Start Live";
+        console.log('Stopped live mode - switching to Playback Ready mode');
+      }
+
+      // Update mode indicator now that we have recorded audio ready
+      updateModeIndicator();
+
+      console.log('Recording loaded into playback bar - ready to play manually');
+
     }).catch((error) => {
       console.error('Failed to decode recorded audio for playback:', error);
       alert('Recording completed but playback setup failed - you can still download the file');
@@ -911,6 +1082,8 @@ function createPlaybackBufferFromBlob(blob) {
   };
   fileReader.readAsArrayBuffer(blob);
 }
+
+
 
 // Recording button functionality
 recordBtn.onclick = () => {
@@ -930,11 +1103,11 @@ recordBtn.onclick = () => {
 
     // Auto-start live mode if not already running
     if (!running) {
-      startLiveMode().then(() => {
-        startWAVRecording(); // Only update UI/metrics, don't start recording again
+      startLiveVisualization().then(() => {
+        startWAVRecording();
       });
     } else {
-      startWAVRecording(); // Only update UI/metrics, don't start recording again
+      startWAVRecording();
     }
   } else {
     // Stop recorder with graceful termination
