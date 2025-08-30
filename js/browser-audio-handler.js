@@ -213,17 +213,17 @@ class BrowserAudioHandler {
 
     this.running = false;
 
-    // Don't stop the stream here, keep it for reuse
-    if (this.audioCtx) {
+    // Disconnect audio source but keep analyser running for natural decay (like playback mode)
+    if (this.source && this.analyser) {
       try {
-        await this.audioCtx.close();
-        this.audioCtx = null;
+        this.source.disconnect(this.analyser);
+        console.log('🌐 Audio source disconnected - analyser will decay naturally to silence');
       } catch (error) {
-        console.error('Error closing AudioContext:', error);
+        console.error('Error disconnecting audio source:', error);
       }
     }
 
-    console.log('🌐 BrowserAudioHandler: Live visualization stopped');
+    console.log('🌐 BrowserAudioHandler: Live visualization stopped (decay period active)');
     return true;
   }
 

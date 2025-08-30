@@ -68,6 +68,8 @@ class SpectrumGraph {
     if (this.peakHoldArray.length !== bufferLength) {
       this.peakHoldArray = new Float32Array(bufferLength).fill(-Infinity);
     }
+
+
   }
 
   resize() {
@@ -270,7 +272,7 @@ class SpectrumGraph {
       else this.ctx.lineTo(x, y);
       if (this.togglePeakHold.checked && val > this.peakHoldArray[i]) this.peakHoldArray[i] = val;
     }
-    this.ctx.strokeStyle = isLiveMode ? this.liveLineColor : this.liveLineColor; // Use live line color for both live and playback
+    this.ctx.strokeStyle = this.liveLineColor;
     this.ctx.lineWidth = 1;
     this.ctx.stroke();
 

@@ -526,6 +526,12 @@ startBtn.onclick = async () => {
       icon.setAttribute('data-lucide', 'mic');
       if (typeof lucide !== 'undefined') lucide.createIcons();
 
+      // Clear live spectrum data to make live line go to 0
+      if (spectrumGraph && spectrumGraph.dataArray) {
+        const dbMinVal = parseFloat(dbMin.value);
+        spectrumGraph.dataArray.fill(dbMinVal); // Set to the graph's minimum dB level
+      }
+
       updateModeIndicator();
     } else {
       console.error('Failed to stop live visualization');
