@@ -25,8 +25,9 @@ const AppState = {
 };
 
 let currentMode = AppState.IDLE;
+let showModeIndicator = false; // Default to hidden
 const modeIndicator = document.createElement('div');
-modeIndicator.style.cssText = 'font-size: 12px; color: #ccc; padding: 5px 10px; background: #222; border-radius: 4px;';
+modeIndicator.style.cssText = 'font-size: 12px; color: #ccc; padding: 5px 10px; background: #222; border-radius: 4px; display: none;'; // Hidden by default
 document.querySelector('.header').appendChild(modeIndicator);
 
 // High-quality WAV recording URL for downloads
@@ -53,6 +54,21 @@ function updateModeIndicator() {
   }
 
   modeIndicator.textContent = currentMode;
+  updateModeIndicatorVisibility();
+}
+
+function updateModeIndicatorVisibility() {
+  if (showModeIndicator) {
+    modeIndicator.style.display = 'block';
+  } else {
+    modeIndicator.style.display = 'none';
+  }
+}
+
+function toggleModeIndicator() {
+  showModeIndicator = !showModeIndicator;
+  updateModeIndicatorVisibility();
+  saveSettings();
 }
 
 // Get references to input elements for settings
@@ -63,6 +79,86 @@ const dbMax = document.getElementById('dbMax');
 const togglePeakHold = document.getElementById('togglePeakHold');
 const peakCount = document.getElementById('peakCount');
 const peakDelta = document.getElementById('peakDelta');
+const toggleModeIndicatorCheckbox = document.getElementById('toggleModeIndicator');
+
+// Dynamic frequency validation based on actual sample rate
+let currentSampleRate = 44100;
+let currentNyquistFreq = currentSampleRate / 2;
+
+// Check if higher sample rates are supported
+async function checkMaxSampleRate() {
+  try {
+    // Try to get user media with higher sample rates
+    const testRates = [96000, 48000, 44100];
+    for (const rate of testRates) {
+      try {
+        const testStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            sampleRate: rate,
+            channelCount: 1
+          }
+        });
+        testStream.getTracks().forEach(track => track.stop());
+        console.log(`✅ Sample rate ${rate} Hz is supported`);
+        currentSampleRate = rate;
+        currentNyquistFreq = rate / 2;
+        return rate;
+      } catch (e) {
+        console.log(`❌ Sample rate ${rate} Hz not supported`);
+      }
+    }
+  } catch (e) {
+    console.log('Could not test sample rates:', e);
+  }
+  currentSampleRate = 44100;
+  currentNyquistFreq = 22050;
+  return 44100; // Fallback to default
+}
+
+// Update frequency limits when audio context changes
+function updateFrequencyLimits() {
+  if (audioCtx && audioCtx.sampleRate) {
+    currentSampleRate = audioCtx.sampleRate;
+    currentNyquistFreq = audioCtx.sampleRate / 2;
+    console.log(`🎵 Updated frequency limits: Max ${currentNyquistFreq.toFixed(0)} Hz (Sample rate: ${currentSampleRate} Hz)`);
+  }
+}
+
+// Add input validation for frequency ranges
+function validateFrequencyInputs() {
+  const minVal = parseFloat(freqMin.value);
+  const maxVal = parseFloat(freqMax.value);
+
+  // Ensure minimum frequency is not negative
+  if (minVal < 0) {
+    freqMin.value = 0;
+  }
+
+  // Ensure maximum frequency doesn't exceed current Nyquist frequency
+  if (maxVal > currentNyquistFreq) {
+    freqMax.value = currentNyquistFreq;
+    console.log(`🔧 Adjusted max frequency to ${currentNyquistFreq.toFixed(0)} Hz (Nyquist limit)`);
+  }
+
+  // Ensure minimum is less than maximum
+  if (minVal >= maxVal) {
+    if (maxVal <= 100) {
+      freqMin.value = Math.max(0, maxVal - 100);
+    } else {
+      freqMax.value = Math.min(currentNyquistFreq, minVal + 100);
+    }
+  }
+}
+
+// Add event listeners for frequency input validation
+freqMin.addEventListener('input', validateFrequencyInputs);
+freqMin.addEventListener('change', validateFrequencyInputs);
+freqMax.addEventListener('input', validateFrequencyInputs);
+freqMax.addEventListener('change', validateFrequencyInputs);
+
+// Set default frequency range if not set
+if (!freqMin.value) freqMin.value = 20; // Start from 20Hz (human hearing range)
+if (!freqMax.value) freqMax.value = 20000; // Up to 20kHz (most of human hearing range)
 // Immediately update analyser when FFT size changes
 const fftSizeSelect = document.getElementById('fftSizeSelect');
 
@@ -82,6 +178,13 @@ fftSizeSelect.addEventListener('change', () => {
     peakHoldArray = newPeakHold;
     source.connect(analyser);
   }
+});
+
+// Handle mode indicator toggle
+toggleModeIndicatorCheckbox.addEventListener('change', () => {
+  showModeIndicator = toggleModeIndicatorCheckbox.checked;
+  updateModeIndicatorVisibility();
+  saveSettings();
 });
 
 let audioCtx, analyser, dataArray, bufferLength, source;
@@ -236,7 +339,8 @@ function saveSettings() {
     peakCount: peakCount.value,
     peakDelta: peakDelta.value,
     fftSize: fftSizeSelect.value,
-    deviceId: document.getElementById('deviceSelect').value
+    deviceId: document.getElementById('deviceSelect').value,
+    showModeIndicator: showModeIndicator
   };
   document.cookie = "spectrumSettings=" + JSON.stringify(settings) + "; path=/; max-age=31536000";
 }
@@ -263,6 +367,11 @@ function loadSettings() {
           select.value = settings.deviceId;
         }
       }, 100);
+    }
+    if(settings.showModeIndicator !== undefined) {
+      showModeIndicator = settings.showModeIndicator;
+      toggleModeIndicatorCheckbox.checked = showModeIndicator;
+      updateModeIndicatorVisibility();
     }
   } catch(e){}
 }
@@ -371,7 +480,6 @@ async function initApp() {
     playbackLine.style.display = 'block';
     playbackLine.style.opacity = '1';
     playbackLine.style.visibility = 'visible';
-    console.log('Playback line initialized at 10px with forced visibility');
   }
 }
 
@@ -427,6 +535,7 @@ startBtn.onclick = async () => {
 
     // Set up AudioContext with this stream
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    updateFrequencyLimits(); // Update frequency limits based on actual sample rate
     analyser = audioCtx.createAnalyser();
     analyser.fftSize = parseInt(fftSizeSelect.value);
     analyser.smoothingTimeConstant = 0.0;
@@ -557,34 +666,36 @@ function drawSpectrum(isLiveMode = true) {
 
   // Update audio level bars - single active bar per level range
   const bars = document.querySelectorAll('#audioLevel .level-bar');
-  let activeIndex = 6;
-  if (dbLevel > 0 || dbLevel === 0) activeIndex = 6;
-  else if (dbLevel > -20) activeIndex = 5;
-  else if (dbLevel > -40) activeIndex = 4;
-  else if (dbLevel > -60) activeIndex = 3;
-  else if (dbLevel > -80) activeIndex = 2;
-  else if (dbLevel > -100) activeIndex = 1;
+  let activeIndex = 8;
+  if (dbLevel > 0 || dbLevel === 0) activeIndex = 8;
+  else if (dbLevel > -20) activeIndex = 7;
+  else if (dbLevel > -40) activeIndex = 6;
+  else if (dbLevel > -60) activeIndex = 5;
+  else if (dbLevel > -80) activeIndex = 4;
+  else if (dbLevel > -100) activeIndex = 3;
+  else if (dbLevel > -120) activeIndex = 2;
+  else if (dbLevel > -140) activeIndex = 1;
   else activeIndex = 0;
 
   bars.forEach((bar, index) => {
     if (index <= activeIndex) {
       let baseClass = 'low-on';
-      if (index <= 2) {
-        baseClass = 'low-on';
-      } else if (index <= 4) {
-        baseClass = 'mid-on';
+      if (index <= 5) {
+        baseClass = 'low-on'; // Green for -Inf to -100 dB
+      } else if (index <= 7) {
+        baseClass = 'mid-on'; // Yellow for -80 to -20 dB
       } else {
-        baseClass = 'high-on';
+        baseClass = 'high-on'; // Red for 0 dB
       }
       bar.className = `level-bar ${baseClass}`;
     } else {
       let baseClass = 'low-off';
-      if (index <= 2) {
-        baseClass = 'low-off';
-      } else if (index <= 4) {
-        baseClass = 'mid-off';
+      if (index <= 5) {
+        baseClass = 'low-off'; // Green for -Inf to -100 dB
+      } else if (index <= 7) {
+        baseClass = 'mid-off'; // Yellow for -80 to -20 dB
       } else {
-        baseClass = 'high-off';
+        baseClass = 'high-off'; // Red for 0 dB
       }
       bar.className = `level-bar ${baseClass}`;
     }
@@ -1240,6 +1351,23 @@ function startLiveMode() {
   // MediaRecorder setup happens in startBtn onclick
   return Promise.resolve();
 }
+
+// Share dropdown functionality
+const shareBtn = document.getElementById('shareBtn');
+const shareDropdown = document.getElementById('shareDropdown');
+const shareDropdownContainer = document.querySelector('.share-dropdown');
+
+shareBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  shareDropdownContainer.classList.toggle('active');
+});
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+  if (!shareDropdownContainer.contains(e.target)) {
+    shareDropdownContainer.classList.remove('active');
+  }
+});
 
 // Overlay functionality
 const overlay = document.querySelector('.overlay');

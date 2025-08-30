@@ -28,6 +28,78 @@ body {
   gap: 10px;
   align-items: center;
 }
+
+.header-buttons {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.icon-btn {
+  background: #444;
+  color: #eee;
+  border: none;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 8px;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  transition: background-color 0.2s;
+}
+
+.icon-btn:hover {
+  background: #555;
+}
+
+.share-dropdown {
+  position: relative;
+}
+
+.dropdown-content {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: #333;
+  border: 1px solid #555;
+  border-radius: 4px;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+  z-index: 1001;
+  min-width: 150px;
+}
+
+.dropdown-content button {
+  background: none;
+  border: none;
+  color: #eee;
+  padding: 10px 15px;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  font-size: 14px;
+  transition: background-color 0.2s;
+}
+
+.dropdown-content button:hover {
+  background: #444;
+}
+
+.dropdown-content button:first-child {
+  border-radius: 3px 3px 0 0;
+}
+
+.dropdown-content button:last-child {
+  border-radius: 0 0 3px 3px;
+}
+
+.share-dropdown:hover .dropdown-content,
+.share-dropdown.active .dropdown-content {
+  display: block;
+}
 #controls {
   display: block;
 }

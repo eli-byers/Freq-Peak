@@ -12,6 +12,8 @@
       <label>Input: <select id="deviceSelect" style="background: #444; color: #fff; padding: 5px; border: none; border-radius: 4px;"></select></label>
       <div class="audio-level" id="audioLevel">
         <span data-level="-Inf" class="level-bar low-off"></span>
+        <span data-level="-140" class="level-bar low-off"></span>
+        <span data-level="-120" class="level-bar low-off"></span>
         <span data-level="-100" class="level-bar low-off"></span>
         <span data-level="-80" class="level-bar mid-off"></span>
         <span data-level="-60" class="level-bar mid-off"></span>
@@ -19,11 +21,20 @@
         <span data-level="-20" class="level-bar high-off"></span>
         <span data-level="0" class="level-bar high-off"></span>
       </div>
-      <button id="settingsBtn">Settings</button>
       <input type="file" id="audioFileInput" accept="audio/*" style="display: none;">
       <label for="audioFileInput" id="loadBtn" style="background: #17a2b8; color: #fff; border: none; padding: 10px; border-radius: 4px; cursor: pointer;">Load Audio</label>
       <button id="recordBtn" style="background: #dc3545; color: #fff; border: none; padding: 10px; border-radius: 4px; cursor: pointer;">Record</button>
-      <button id="startBtn" style="background: #28a745; color: #fff; border: none; padding: 10px; border-radius: 4px; cursor: pointer;">Start</button>
+      <button id="startBtn" style="background: #28a745; color: #fff; border: none; padding: 10px; border-radius: 4px; cursor: pointer;">Start Live</button>
+      <div class="header-buttons">
+        <div class="share-dropdown">
+          <button id="shareBtn" class="icon-btn" title="Share">📤</button>
+          <div id="shareDropdown" class="dropdown-content">
+            <button id="savePngBtn">📷 Save PNG</button>
+            <button id="saveCsvBtn">📊 Save Peak CSV</button>
+          </div>
+        </div>
+        <button id="settingsBtn" class="icon-btn" title="Settings">⚙️</button>
+      </div>
     </div>
   </div>
   <div id="playbackBar" class="playback-bar" style="display: none;">
@@ -78,12 +89,12 @@
           </div>
         </div>
         <div class="settings-section">
-          <h3>Saving</h3>
+          <h3>Display</h3>
           <div>
-            <button id="savePngBtn">Save PNG</button>
-            <button id="saveCsvBtn">Save Peak CSV</button>
+            <label><input type="checkbox" id="toggleModeIndicator"> Show Mode Indicator</label>
           </div>
         </div>
+
       </div>
     </div>
   </div>
