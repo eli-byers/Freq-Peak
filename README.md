@@ -60,6 +60,20 @@ A real-time audio spectrum analyzer built with Web Audio API, featuring live aud
    - Upload all files to your web server
    - Ensure HTTPS is enabled for microphone access
 
+### Project Structure
+
+```
+spectrum-analyzer/
+├── index.html          # Main HTML file
+├── style.css           # Application styles
+├── js/                 # JavaScript modules
+│   ├── script.js       # Main application logic
+│   └── spectrum-graph.js # Spectrum visualization
+├── favicon/            # Application icons
+├── ARCHITECTURE_PLAN.md # Rearchitecture documentation
+└── README.md          # This file
+```
+
 ## 📖 Usage
 
 ### Basic Operation
