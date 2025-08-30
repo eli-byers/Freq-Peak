@@ -309,6 +309,10 @@ canvas {
   flex-shrink: 0;
 }
 
+.playback-bar .playback-info span {
+  padding-right: 10px;
+}
+
 .playback-bar .playback-info button {
   background: transparent;
   color: #fff;

@@ -190,6 +190,7 @@ toggleModeIndicatorCheckbox.addEventListener('change', () => {
 let audioCtx, analyser, dataArray, bufferLength, source;
 let peakHoldArray = [];
 let running = false;
+// Canvas dimensions
 let width, height;
 let latestPeaks = [];
 // 🎙️ MediaRecorder variables for proper recording
@@ -201,6 +202,18 @@ let safeStream = null; // Single stream shared between AudioContext and MediaRec
 // Waveform visualization
 let waveformCanvas, waveformCtx;
 let waveformWidth, waveformHeight;
+
+// Create spectrum graph instance
+let spectrumGraph;
+
+function resize() {
+  width = canvas.clientWidth;
+  height = canvas.clientHeight;
+  canvas.width = width;
+  canvas.height = height;
+}
+window.addEventListener('resize', resize);
+resize();
 
 function initWaveformCanvas() {
   waveformCanvas = document.getElementById('waveformCanvas');
@@ -269,76 +282,6 @@ function drawWaveform(audioBuffer) {
   waveformCtx.stroke();
 }
 
-function resize() {
-  width = canvas.clientWidth;
-  height = canvas.clientHeight;
-  canvas.width = width;
-  canvas.height = height;
-}
-window.addEventListener('resize', resize);
-resize();
-
-function drawLabels(freqMinVal, freqMaxVal, dbMinVal, dbMaxVal) {
-  // Draw axis labels
-  ctx.fillStyle = "#fff";
-  ctx.font = "12px sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText("Frequency (Hz)", width/2, height-10);
-  ctx.save();
-  ctx.translate(12, height/2);
-  ctx.rotate(-Math.PI/2);
-  ctx.fillText("Amplitude (dB)", 0, 0);
-  ctx.restore();
-
-  // Draw grid line labels
-  ctx.fillStyle = "#fff";
-  ctx.font = "12px sans-serif";
-
-  // Frequency grid labels (bottom)
-  const numFreqLines = 10;
-  const freqRange = freqMaxVal - freqMinVal;
-  for(let i=1; i<numFreqLines; i++){
-    const f = freqMinVal + (freqRange * i / numFreqLines);
-    const x = 32 + (f - freqMinVal) / freqRange * (width - 64);
-    ctx.textAlign = "center";
-    ctx.fillText(f >= 1000 ? (f/1000).toFixed(1)+"k" : f.toFixed(0), x, height-35);
-  }
-
-  // dB grid labels (left)
-  const numDbLines = 5;
-  const dbRange = Math.abs(dbMinVal - dbMaxVal) || 100;
-  for(let i=1; i<numDbLines; i++){
-    const db = dbMaxVal - (dbRange * i / numDbLines);
-    const y = 10 + (1 - (db - dbMinVal) / dbRange) * (height - 62);
-    ctx.textAlign = "right";
-    ctx.fillText(db.toFixed(0), 28, y+2);
-  }
-}
-
-function drawStatic() {
-  ctx.fillStyle = "#111";
-  ctx.fillRect(0,0,width,height);
-
-  const freqMinVal = parseFloat(freqMin.value);
-  const freqMaxVal = parseFloat(freqMax.value);
-  const dbMinVal = parseFloat(dbMin.value);
-  const dbMaxVal = parseFloat(dbMax.value);
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(32, 10, width-64, height-62);
-  ctx.clip();
-
-  drawAxes(freqMinVal, freqMaxVal, dbMinVal, dbMaxVal);
-
-  drawGrid(freqMinVal, freqMaxVal, dbMinVal, dbMaxVal);
-
-  ctx.restore();
-
-  drawLabels(freqMinVal, freqMaxVal, dbMinVal, dbMaxVal);
-}
-drawStatic();
-
 function saveSettings() {
   const settings = {
     freqMin: freqMin.value,
@@ -386,7 +329,7 @@ function loadSettings() {
 
     // Update the graph axes with the loaded values
     setTimeout(() => {
-      drawStatic();
+      spectrumGraph.drawStatic();
     }, 50);
   } catch(e){}
 }
@@ -480,13 +423,20 @@ async function startLiveVisualization() {
   running = true;
   startBtn.title = "Stop Live Audio";
   updateModeIndicator();
-  draw();
+
+  // Set audio context in spectrum graph for live mode
+  spectrumGraph.setAudioContext(audioCtx, analyser, dataArray, bufferLength, source, true);
+  spectrumGraph.draw();
 }
 
 async function initApp() {
   await populateDevices();
   await requestMicPermission();
   initWaveformCanvas();
+
+  // Initialize spectrum graph
+  spectrumGraph = new SpectrumGraph('canvas');
+  spectrumGraph.setSettings(freqMin, freqMax, dbMin, dbMax, togglePeakHold, peakCount, peakDelta);
 
   // Initialize playback line position - ensure it's at canvas left edge
   const playbackLine = document.getElementById('playbackLine');
@@ -508,6 +458,9 @@ async function initApp() {
       }
     }, 100);
   }
+
+  // Draw initial static graph
+  spectrumGraph.drawStatic();
 }
 
 initApp();
@@ -597,7 +550,11 @@ startBtn.onclick = async () => {
     lucide.createIcons();
 
     updateModeIndicator();
-    draw();
+
+    // Set audio context in spectrum graph for live mode
+    spectrumGraph.setAudioContext(audioCtx, analyser, dataArray, bufferLength, source);
+    spectrumGraph.draw();
+
   } else {
     console.log('Stopping Live Mode');
     running = false;
@@ -622,204 +579,7 @@ canvas.addEventListener('click', ()=>{
   latestPeaks = [];
 });
 
-function drawAxes(freqMinVal, freqMaxVal, dbMinVal, dbMaxVal){
-  ctx.strokeStyle = "#444";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(32, 10);
-  ctx.lineTo(32, height-52);
-  ctx.lineTo(width-32, height-52);
-  ctx.stroke();
-}
 
-function drawGrid(freqMin, freqMax, dbMin, dbMax){
-  ctx.strokeStyle = "#333";
-  ctx.lineWidth = 0.5;
-
-  // Vertical grid lines (frequency)
-  const numFreqLines = 10;
-  const freqRange = freqMax - freqMin;
-  for(let i=1; i<numFreqLines; i++){
-    const f = freqMin + (freqRange * i / numFreqLines);
-    const x = 32 + (f - freqMin) / freqRange * (width - 64);
-    ctx.beginPath();
-    ctx.moveTo(x, 10);
-    ctx.lineTo(x, height-52);
-    ctx.stroke();
-  }
-
-  // Horizontal grid lines (dB)
-  const numDbLines = 5;
-  const dbRange = Math.abs(dbMin - dbMax) || 100;
-  for(let i=1; i<numDbLines; i++){
-    const db = dbMax - (dbRange * i / numDbLines);
-    const y = 10 + (1 - (db - dbMin) / dbRange) * (height - 62);
-    ctx.beginPath();
-    ctx.moveTo(32, y);
-    ctx.lineTo(width-32, y);
-    ctx.stroke();
-  }
-}
-
-function getPeaksFromArray(arr, freqMinVal, freqMaxVal, peakCount, peakDelta){
-  const peaks = [];
-  const nyquist = audioCtx.sampleRate/2;
-  for(let i=1;i<arr.length-1;i++){
-    if(arr[i] > arr[i-1] && arr[i] > arr[i+1]){
-      const freq = i/arr.length * nyquist;
-      if(freq<freqMinVal || freq>freqMaxVal) continue;
-      peaks.push({freq: freq, db: arr[i]});
-    }
-  }
-  peaks.sort((a,b)=>b.db-a.db);
-  const selected = [];
-  for(let p of peaks){
-    if(selected.length >= peakCount) break;
-    if(selected.every(s => Math.abs(s.freq - p.freq) > peakDelta)){
-      selected.push(p);
-    }
-  }
-  return selected;
-}
-
-function drawSpectrum(isLiveMode = true) {
-  // Check if we should continue drawing based on mode
-  if (isLiveMode && !running) return;
-  if (!isLiveMode && !isPlaying) return;
-
-  // Continue the animation loop
-  requestAnimationFrame(() => drawSpectrum(isLiveMode));
-
-  analyser.getFloatFrequencyData(dataArray);
-
-  // Calculate RMS dB for audio level indicator
-  let sum = 0;
-  dataArray.forEach(val => {
-    if (val > -200) {
-      let amplitude = Math.pow(10, val / 20);
-      sum += amplitude * amplitude;
-    }
-  });
-  const rmsAmplitude = Math.sqrt(sum / dataArray.length);
-  const dbLevel = rmsAmplitude > 0 ? 20 * Math.log10(rmsAmplitude) : -Infinity;
-
-  // Update audio level bars - single active bar per level range
-  const bars = document.querySelectorAll('#audioLevel .level-bar');
-  let activeIndex = 8;
-  if (dbLevel > 0 || dbLevel === 0) activeIndex = 8;
-  else if (dbLevel > -20) activeIndex = 7;
-  else if (dbLevel > -40) activeIndex = 6;
-  else if (dbLevel > -60) activeIndex = 5;
-  else if (dbLevel > -80) activeIndex = 4;
-  else if (dbLevel > -100) activeIndex = 3;
-  else if (dbLevel > -120) activeIndex = 2;
-  else if (dbLevel > -140) activeIndex = 1;
-  else activeIndex = 0;
-
-  bars.forEach((bar, index) => {
-    if (index <= activeIndex) {
-      let baseClass = 'low-on';
-      if (index <= 5) {
-        baseClass = 'low-on'; // Green for -Inf to -100 dB
-      } else if (index <= 7) {
-        baseClass = 'mid-on'; // Yellow for -80 to -20 dB
-      } else {
-        baseClass = 'high-on'; // Red for 0 dB
-      }
-      bar.className = `level-bar ${baseClass}`;
-    } else {
-      let baseClass = 'low-off';
-      if (index <= 5) {
-        baseClass = 'low-off'; // Green for -Inf to -100 dB
-      } else if (index <= 7) {
-        baseClass = 'mid-off'; // Yellow for -80 to -20 dB
-      } else {
-        baseClass = 'high-off'; // Red for 0 dB
-      }
-      bar.className = `level-bar ${baseClass}`;
-    }
-  });
-
-  const freqMinVal = parseFloat(freqMin.value);
-  const freqMaxVal = parseFloat(freqMax.value);
-  const dbMinVal = parseFloat(dbMin.value);
-  const dbMaxVal = parseFloat(dbMax.value);
-  const peakCountVal = parseInt(peakCount.value);
-  const peakDeltaVal = parseFloat(peakDelta.value);
-
-  if (isLiveMode) {
-    saveSettings();
-  }
-
-  ctx.fillStyle = "#111";
-  ctx.fillRect(0,0,width,height);
-
-  // Clip to graph area to prevent lines from overflowing
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(32, 10, width-64, height-62);
-  ctx.clip();
-
-  drawAxes(freqMinVal, freqMaxVal, dbMinVal, dbMaxVal);
-
-  drawGrid(freqMinVal, freqMaxVal, dbMinVal, dbMaxVal);
-
-  const nyquist = audioCtx.sampleRate/2;
-
-  // spectrum line (color depends on mode)
-  ctx.beginPath();
-  for(let i=0;i<bufferLength;i++){
-    const freq = i/bufferLength*nyquist;
-    if(freq<freqMinVal || freq>freqMaxVal) continue;
-    const x = 32 + (freq-freqMinVal)/(freqMaxVal-freqMinVal)*(width-64);
-    const val = Math.max(dataArray[i], dbMinVal);
-    const y = 10 + (1-(val-dbMinVal)/(dbMaxVal-dbMinVal))*(height-62);
-    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-    if(togglePeakHold.checked && val > peakHoldArray[i]) peakHoldArray[i] = val;
-  }
-  ctx.strokeStyle = isLiveMode ? "#0ff" : "#ff6"; // Cyan for live, yellow-orange for playback
-  ctx.lineWidth = 1;
-  ctx.stroke();
-
-  // peak hold line
-  ctx.beginPath();
-  for(let i=0;i<bufferLength;i++){
-    const freq = i/bufferLength*nyquist;
-    if(freq<freqMinVal || freq>freqMaxVal) continue;
-    const x = 32 + (freq-freqMinVal)/(freqMaxVal-freqMinVal)*(width-64);
-    const val = Math.max(peakHoldArray[i], dbMinVal);
-    const y = 10 + (1-(val-dbMinVal)/(dbMaxVal-dbMinVal))*(height-62);
-    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-  }
-  ctx.strokeStyle = "#ff0";
-  ctx.lineWidth = 1;
-  ctx.stroke();
-
-  // detect peaks on peakHoldArray only
-  latestPeaks = getPeaksFromArray(peakHoldArray, freqMinVal, freqMaxVal, peakCountVal, peakDeltaVal);
-
-  ctx.fillStyle = "#ff0";
-  ctx.font = "12px sans-serif";
-  ctx.textAlign = "center";
-  latestPeaks.forEach(p => {
-    const x = 32 + (p.freq-freqMinVal)/(freqMaxVal-freqMinVal)*(width-64);
-    const y = 10 + (1-(p.db-dbMinVal)/(dbMaxVal-dbMinVal))*(height-62);
-    ctx.fillText(p.freq.toFixed(1)+"Hz", x, y-5);
-  });
-
-  ctx.restore(); // Restore from clip
-
-  drawLabels(freqMinVal, freqMaxVal, dbMinVal, dbMaxVal);
-}
-
-// Convenience functions for backward compatibility
-function draw() {
-  drawSpectrum(true); // Live mode
-}
-
-function drawPlayback() {
-  drawSpectrum(false); // Playback mode
-}
 
 canvas.addEventListener('mousemove', (e)=>{
   const rect = canvas.getBoundingClientRect();
@@ -939,7 +699,7 @@ clearBtn.onclick = () => {
   recordBtn.style.display = 'inline-block';
 
   // Redraw static visualization
-  drawStatic();
+  spectrumGraph.drawStatic();
   resetAudioLevel();
   updateModeIndicator();
 };
@@ -1062,7 +822,10 @@ playBtn.onclick = () => {
     // Reset peak hold for playback
     peakHoldArray = new Float32Array(bufferLength).fill(-Infinity);
 
-    drawPlayback();
+    // Set audio context in spectrum graph for playback mode
+    spectrumGraph.setAudioContext(audioCtx, analyser, dataArray, bufferLength, playbackSource, false);
+    spectrumGraph.drawPlayback();
+    
     updateProgress();
 
     playBtn.style.display = 'none';
@@ -1427,12 +1190,12 @@ settingsBtn.addEventListener('click', () => {
 
 document.querySelector('.close-btn').addEventListener('click', () => {
   overlay.classList.remove('active');
-  drawStatic();
+  spectrumGraph.drawStatic();
 });
 
 overlay.addEventListener('click', (e) => {
   if (e.target === overlay) {
     overlay.classList.remove('active');
-    drawStatic();
+    spectrumGraph.drawStatic();
   }
 });
