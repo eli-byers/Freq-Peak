@@ -190,12 +190,20 @@ label {
 }
 canvas {
   position: absolute;
-  top: 110px;
+  top: 110px; /* Default: 50px header + 60px playback bar */
   left: 20px;
   width: calc(100% - 40px);
-  height: calc(100vh - 130px);
+  height: calc(100vh - 130px); /* Default height calculation */
   display: block;
   cursor: crosshair;
+  transition: top 0.3s ease, height 0.3s ease;
+}
+
+/* When playback bar is visible, push canvas down */
+.playback-bar[style*="display: flex"] ~ canvas,
+.playback-bar[style*="display: block"] ~ canvas {
+  top: 170px; /* 50px header + 120px extended playback bar */
+  height: calc(100vh - 190px); /* Adjusted height */
 }
 .audio-level {
   display: flex;
@@ -230,36 +238,61 @@ canvas {
   top: 50px;
   left: 0;
   right: 0;
-  height: 40px;
+  height: 120px; /* Extended to include waveform container */
   background: rgba(17, 34, 34, 0.95);
+  border-top: 1px solid #444;
   border-bottom: 1px solid #444;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  z-index: 999;
+}
+
+.playback-top-row {
   display: flex;
   align-items: center;
   padding: 0 10px;
-  box-sizing: border-box;
-  z-index: 999;
+  height: 40px;
+  gap: 15px;
 }
 
 .playback-bar .playback-controls {
   display: flex;
   gap: 5px;
+  flex-shrink: 0;
 }
 
-.playback-bar .playback-controls button {
-  background: #444;
+.playback-btn {
+  background: transparent;
   color: #fff;
   border: none;
-  padding: 5px;
   border-radius: 3px;
   cursor: pointer;
-  min-width: 25px;
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  transition: background-color 0.2s;
+}
+
+.playback-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.playback-btn .lucide-icon {
+  width: 16px;
+  height: 16px;
+  stroke: #fff;
+  stroke-width: 2;
 }
 
 .progress-time {
-  margin-left: 15px;
   font-size: 11px;
   color: #ccc;
   min-width: 80px;
+  flex-shrink: 0;
 }
 
 .playback-bar .playback-info {
@@ -273,10 +306,11 @@ canvas {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  flex-shrink: 0;
 }
 
 .playback-bar .playback-info button {
-  background: #444;
+  background: transparent;
   color: #fff;
   border: none;
   padding: 3px 8px;
@@ -284,22 +318,25 @@ canvas {
   cursor: pointer;
   font-size: 11px;
   min-width: 25px;
+  transition: background-color 0.2s;
+}
+
+.playback-bar .playback-info button:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .waveform-container {
-  position: fixed;
-  top: 90px; /* 50px (playback bar) + 40px (playback bar height) */
-  left: 0px;
-  right: 0px;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
   height: 80px;
   background: rgba(17, 34, 34, 0.95);
-  border-top: 1px solid #444;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 5px 10px; /* Use margin instead of padding for simpler positioning */
+  padding: 0px 10px 5px;
   box-sizing: border-box;
-  z-index: 998; /* Below playback bar (999) but above other content */
 }
 
 .waveform-container canvas {
@@ -313,8 +350,8 @@ canvas {
 
 .playback-line {
   position: absolute;
-  top: 10px;
-  bottom: 10px;
+  top: 3px;
+  bottom: 8px;
   left: 10px;
   width: 2px;
   background: white;

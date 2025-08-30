@@ -222,13 +222,15 @@ function drawWaveform(audioBuffer) {
   waveformCtx.fillStyle = '#111';
   waveformCtx.fillRect(0, 0, waveformWidth, waveformHeight);
 
-  // Draw center line
-  waveformCtx.strokeStyle = '#333';
-  waveformCtx.lineWidth = 1;
-  waveformCtx.beginPath();
-  waveformCtx.moveTo(0, waveformHeight / 2);
-  waveformCtx.lineTo(waveformWidth, waveformHeight / 2);
-  waveformCtx.stroke();
+  // Find the maximum absolute amplitude to scale the waveform
+  let maxAmplitude = 0;
+  for (let i = 0; i < samples; i++) {
+    const absValue = Math.abs(channelData[i]);
+    if (absValue > maxAmplitude) maxAmplitude = absValue;
+  }
+
+  // If maxAmplitude is very small (quiet audio), set a minimum scale
+  const scale = maxAmplitude > 0.001 ? 1 / maxAmplitude : 1000;
 
   // Draw waveform
   waveformCtx.strokeStyle = '#0ff';
@@ -248,8 +250,13 @@ function drawWaveform(audioBuffer) {
       if (sample > max) max = sample;
     }
 
-    const y1 = (1 - min) * waveformHeight / 2;
-    const y2 = (1 - max) * waveformHeight / 2;
+    // Scale the waveform to fill the entire canvas height
+    const scaledMin = (1 - min * scale) * waveformHeight;
+    const scaledMax = (1 - max * scale) * waveformHeight;
+
+    // Ensure we don't go outside the canvas bounds
+    const y1 = Math.max(0, Math.min(waveformHeight, scaledMin));
+    const y2 = Math.max(0, Math.min(waveformHeight, scaledMax));
 
     if (i === 0) {
       waveformCtx.moveTo(i, y1);
@@ -463,7 +470,6 @@ async function startLiveVisualization() {
     peakHoldArray = new Float32Array(bufferLength).fill(-Infinity);
   }
   running = true;
-  startBtn.innerHTML = '<i data-lucide="mic-off" class="lucide-icon"></i>';
   startBtn.title = "Stop Live Audio";
   updateModeIndicator();
   draw();
@@ -575,12 +581,7 @@ startBtn.onclick = async () => {
       peakHoldArray = new Float32Array(bufferLength).fill(-Infinity);
     }
     running = true;
-    startBtn.innerHTML = '<i data-lucide="mic-off" class="lucide-icon"></i>';
     startBtn.title = "Stop Live Audio";
-    // Re-initialize Lucide icons after changing innerHTML
-    if (typeof lucide !== 'undefined') {
-      lucide.createIcons();
-    }
     updateModeIndicator();
     draw();
   } else {
@@ -590,12 +591,7 @@ startBtn.onclick = async () => {
     if (audioCtx) {
       audioCtx.close();
     }
-    startBtn.innerHTML = '<i data-lucide="mic" class="lucide-icon"></i>';
     startBtn.title = "Start Live Audio";
-    // Re-initialize Lucide icons after changing innerHTML
-    if (typeof lucide !== 'undefined') {
-      lucide.createIcons();
-    }
     resetAudioLevel();
     updateModeIndicator();
   }
@@ -908,6 +904,13 @@ audioFileInput.onchange = async (event) => {
     fileName.textContent = file.name;
     playbackBar.style.display = 'flex';
 
+    // Set total time immediately when file is loaded
+    const totalSeconds = audioBuffer.duration;
+    totalTime.textContent = formatTime(totalSeconds);
+    currentTime.textContent = '0:00';
+
+    console.log('File loaded - Duration:', totalSeconds.toFixed(2), 'seconds');
+
     // Keep main controls visible (don't hide start/record)
     // playBtn.style.display = 'inline-block';
     // pauseBtn.style.display = 'inline-block';
@@ -1092,6 +1095,13 @@ pauseBtn.onclick = () => {
     isPlaying = false;
     playBtn.style.display = 'inline-block';
     pauseBtn.style.display = 'none';
+
+    // Reset playback line to start position
+    const playbackLine = document.getElementById('playbackLine');
+    if (playbackLine) {
+      playbackLine.style.left = '10px';
+    }
+
     updateModeIndicator();
   }
 };
@@ -1302,7 +1312,6 @@ function createPlaybackBufferFromBlob(blob) {
         if (audioCtx && audioCtx.state !== 'closed') {
           audioCtx.close();
         }
-        startBtn.innerHTML = '<i data-lucide="mic" class="lucide-icon"></i>';
         startBtn.title = "Start Live Audio";
         console.log('Stopped live mode - switching to Playback Ready mode');
       }
@@ -1336,7 +1345,10 @@ recordBtn.onclick = () => {
     settingsBtn.style.cursor = 'not-allowed';
     fftSizeSelect.disabled = true;
     fftSizeSelect.style.opacity = '0.5';
-    console.log('🔒 Settings controls disabled during recording');
+    startBtn.disabled = true;
+    startBtn.style.opacity = '0.5';
+    startBtn.style.cursor = 'not-allowed';
+    console.log('🔒 Settings and live mic controls disabled during recording');
 
     // Auto-start live mode if not already running
     if (!running) {
@@ -1360,7 +1372,10 @@ recordBtn.onclick = () => {
     settingsBtn.style.cursor = 'pointer';
     fftSizeSelect.disabled = false;
     fftSizeSelect.style.opacity = '1';
-    console.log('🔓 Settings controls re-enabled after recording');
+    startBtn.disabled = false;
+    startBtn.style.opacity = '1';
+    startBtn.style.cursor = 'pointer';
+    console.log('🔓 Settings and live mic controls re-enabled after recording');
   }
 };
 

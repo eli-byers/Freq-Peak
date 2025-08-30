@@ -62,17 +62,27 @@
     </div>
   </div>
   <div id="playbackBar" class="playback-bar" style="display: none;">
-    <div class="playback-controls">
-      <button id="playBtn">▶</button>
-      <button id="pauseBtn" style="display: none;">⏸</button>
-    </div>
-    <div class="progress-time">
-      <span id="currentTime">0:00</span>/<span id="totalTime">0:00</span>
-    </div>
-    <div class="playback-info">
-      <span id="fileName">_</span>
-      <button id="downloadBtn" title="Download">↓</button>
-      <button id="clearBtn" title="Clear">×</button>
+    <div class="playback-top-row">
+      <div class="playback-controls">
+        <button id="playBtn" class="playback-btn" title="Play">
+          <i data-lucide="play" class="lucide-icon"></i>
+        </button>
+        <button id="pauseBtn" class="playback-btn" title="Pause" style="display: none;">
+          <i data-lucide="pause" class="lucide-icon"></i>
+        </button>
+      </div>
+      <div class="progress-time">
+        <span id="currentTime">0:00</span>/<span id="totalTime">0:00</span>
+      </div>
+      <div class="playback-info">
+        <span id="fileName">_</span>
+        <button id="downloadBtn" class="playback-btn" title="Download">
+          <i data-lucide="download" class="lucide-icon"></i>
+        </button>
+        <button id="clearBtn" class="playback-btn" title="Clear">
+          <i data-lucide="x" class="lucide-icon"></i>
+        </button>
+      </div>
     </div>
     <div class="waveform-container">
       <canvas id="waveformCanvas" width="800" height="80"></canvas>
