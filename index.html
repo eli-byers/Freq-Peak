@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Spectrum Analyzer</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="header">
+    <h1>Spectrum Analyzer</h1>
+    <div class="controls-container">
+      <label>Input: <select id="deviceSelect" style="background: #444; color: #fff; padding: 5px; border: none; border-radius: 4px;"></select></label>
+      <div class="audio-level" id="audioLevel">
+        <span data-level="-Inf" class="level-bar low-off"></span>
+        <span data-level="-100" class="level-bar low-off"></span>
+        <span data-level="-80" class="level-bar mid-off"></span>
+        <span data-level="-60" class="level-bar mid-off"></span>
+        <span data-level="-40" class="level-bar mid-off"></span>
+        <span data-level="-20" class="level-bar high-off"></span>
+        <span data-level="0" class="level-bar high-off"></span>
+      </div>
+      <button id="settingsBtn">Settings</button>
+      <input type="file" id="audioFileInput" accept="audio/*" style="display: none;">
+      <label for="audioFileInput" id="loadBtn" style="background: #17a2b8; color: #fff; border: none; padding: 10px; border-radius: 4px; cursor: pointer;">Load Audio</label>
+      <button id="recordBtn" style="background: #dc3545; color: #fff; border: none; padding: 10px; border-radius: 4px; cursor: pointer;">Record</button>
+      <button id="startBtn" style="background: #28a745; color: #fff; border: none; padding: 10px; border-radius: 4px; cursor: pointer;">Start</button>
+    </div>
+  </div>
+  <div id="playbackBar" class="playback-bar" style="display: none;">
+    <div class="playback-controls">
+      <button id="playBtn">▶</button>
+      <button id="pauseBtn" style="display: none;">⏸</button>
+    </div>
+    <div class="progress-section">
+      <div class="progress-bar">
+        <div id="progressFill" class="progress-fill" style="width: 0%;"></div>
+      </div>
+      <div class="progress-time">
+        <span id="currentTime">0:00</span>/<span id="totalTime">0:00</span>
+      </div>
+    </div>
+    <div class="playback-info">
+      <span id="fileName">_</span>
+      <button id="downloadBtn" title="Download">↓</button>
+      <button id="clearBtn" title="Clear">×</button>
+    </div>
+  </div>
+  <div class="overlay">
+    <div class="settings-content">
+      <button class="close-btn">×</button>
+      <div id="controls">
+        <div class="settings-section">
+          <h3>Audio Settings</h3>
+          <div>
+            <label>FFT Size: <select id="fftSizeSelect"><option value="1024">1024</option><option value="2048" selected>2048</option><option value="4096">4096</option><option value="8192">8192</option><option value="16384">16384</option><option value="32768">32768</option></select></label>
+          </div>
+        </div>
+        </div>
+        <div class="settings-section">
+          <h3>Frequency Range</h3>
+          <div>
+            <label>Freq Min: <input type="number" id="freqMin" value="20" min="1" max="20000" step="1"></label>
+            <label>Freq Max: <input type="number" id="freqMax" value="20000" min="1" max="20000" step="1"></label>
+          </div>
+        </div>
+        <div class="settings-section">
+          <h3>dB Range</h3>
+          <div>
+            <label>dB Min: <input type="number" id="dbMin" value="-100" step="1"></label>
+            <label>dB Max: <input type="number" id="dbMax" value="0" step="1"></label>
+          </div>
+        </div>
+        <div class="settings-section">
+          <h3>Peak Settings</h3>
+          <div>
+            <label><input type="checkbox" id="togglePeakHold" checked> Peak Hold</label>
+            <label>Peak Count: <input type="number" id="peakCount" value="5" min="1" max="20"></label>
+            <label>Min Peak ΔHz: <input type="number" id="peakDelta" value="50" min="1" max="2000"></label>
+          </div>
+        </div>
+        <div class="settings-section">
+          <h3>Saving</h3>
+          <div>
+            <button id="savePngBtn">Save PNG</button>
+            <button id="saveCsvBtn">Save Peak CSV</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <canvas id="canvas"></canvas>
+  <div class="tooltip" id="tooltip" style="display:none;"></div>
+
+
+  <script src="script.js"></script>
+</body>
+</html>
