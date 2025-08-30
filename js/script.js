@@ -337,24 +337,61 @@ function loadSettings() {
 loadSettings();
 
 async function populateDevices() {
-  const devices = await navigator.mediaDevices.enumerateDevices();
-  const select = document.getElementById('deviceSelect');
-  select.innerHTML = '';
-  devices.filter(d => d.kind === 'audioinput').forEach(d => {
-    const opt = document.createElement('option');
-    opt.value = d.deviceId;
-    opt.textContent = d.label || `Input ${select.length+1}`;
-    select.appendChild(opt);
-  });
+  try {
+    // Check if MediaDevices API is available
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+      console.warn('MediaDevices API not available');
+      const select = document.getElementById('deviceSelect');
+      select.innerHTML = '<option value="">MediaDevices API not supported</option>';
+      return;
+    }
+
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const select = document.getElementById('deviceSelect');
+    select.innerHTML = '';
+
+    // Filter for audio input devices
+    const audioInputs = devices.filter(d => d.kind === 'audioinput');
+
+    if (audioInputs.length === 0) {
+      select.innerHTML = '<option value="">No audio input devices found</option>';
+      return;
+    }
+
+    audioInputs.forEach(d => {
+      const opt = document.createElement('option');
+      opt.value = d.deviceId;
+      opt.textContent = d.label || `Input ${select.length+1}`;
+      select.appendChild(opt);
+    });
+
+    console.log(`Found ${audioInputs.length} audio input device(s)`);
+  } catch (error) {
+    console.error('Error populating devices:', error);
+    const select = document.getElementById('deviceSelect');
+    select.innerHTML = '<option value="">Error loading devices</option>';
+  }
 }
 
 async function requestMicPermission() {
   try {
-    // Check if we already have microphone permission
-    const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
-    if (permissionStatus.state === 'granted') {
-      console.log('Microphone permission already granted');
-      return; // Don't request again
+    // Check if MediaDevices API is available
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      console.warn('MediaDevices API not available - microphone access will be requested on demand');
+      return;
+    }
+
+    // Check if Permissions API is available
+    if (navigator.permissions && navigator.permissions.query) {
+      try {
+        const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
+        if (permissionStatus.state === 'granted') {
+          console.log('Microphone permission already granted');
+          return; // Don't request again
+        }
+      } catch (e) {
+        console.log('Permissions API query failed:', e);
+      }
     }
 
     const deviceId = document.getElementById('deviceSelect').value;
@@ -367,8 +404,8 @@ async function requestMicPermission() {
     });
     console.log('Microphone permission granted on load');
   } catch (error) {
-    console.error('Microphone permission denied:', error);
-    alert('Microphone permission is required for this application. Please allow microphone access when prompted.');
+    console.error('Microphone permission denied or API not available:', error);
+    // Don't show alert on load - let user request permission when they click Start
   }
 }
 
