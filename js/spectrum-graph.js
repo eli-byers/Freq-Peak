@@ -26,6 +26,10 @@ class SpectrumGraph {
     this.peakCount = null;
     this.peakDelta = null;
 
+    // Color settings
+    this.liveLineColor = '#00ffff'; // Default cyan
+    this.peakLineColor = '#ffff00'; // Default yellow
+
     // Resize and initialize
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -44,6 +48,12 @@ class SpectrumGraph {
     this.togglePeakHold = togglePeakHold;
     this.peakCount = peakCount;
     this.peakDelta = peakDelta;
+  }
+
+  // Set line colors
+  setColors(liveLineColor, peakLineColor) {
+    this.liveLineColor = liveLineColor;
+    this.peakLineColor = peakLineColor;
   }
 
   // Set audio context and analyser
@@ -260,7 +270,7 @@ class SpectrumGraph {
       else this.ctx.lineTo(x, y);
       if (this.togglePeakHold.checked && val > this.peakHoldArray[i]) this.peakHoldArray[i] = val;
     }
-    this.ctx.strokeStyle = isLiveMode ? "#0ff" : "#ff6"; // Cyan for live, yellow-orange for playback
+    this.ctx.strokeStyle = isLiveMode ? this.liveLineColor : this.liveLineColor; // Use live line color for both live and playback
     this.ctx.lineWidth = 1;
     this.ctx.stroke();
 
@@ -275,14 +285,14 @@ class SpectrumGraph {
       if (i === 0) this.ctx.moveTo(x, y);
       else this.ctx.lineTo(x, y);
     }
-    this.ctx.strokeStyle = "#ff0";
+    this.ctx.strokeStyle = this.peakLineColor;
     this.ctx.lineWidth = 1;
     this.ctx.stroke();
 
     // detect peaks on peakHoldArray only
     this.latestPeaks = this.getPeaksFromArray(this.peakHoldArray, freqMinVal, freqMaxVal, peakCountVal, peakDeltaVal);
 
-    this.ctx.fillStyle = "#ff0";
+    this.ctx.fillStyle = "#fff";
     this.ctx.font = "12px sans-serif";
     this.ctx.textAlign = "center";
     this.latestPeaks.forEach(p => {

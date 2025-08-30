@@ -52,6 +52,10 @@ const peakCount = document.getElementById('peakCount');
 const peakDelta = document.getElementById('peakDelta');
 const toggleModeIndicatorCheckbox = document.getElementById('toggleModeIndicator');
 
+// Color settings elements
+const liveLineColor = document.getElementById('liveLineColor');
+const peakLineColor = document.getElementById('peakLineColor');
+
 // Canvas dimensions
 let width, height;
 let latestPeaks = [];
@@ -136,7 +140,9 @@ function saveSettings() {
     peakDelta: peakDelta.value,
     fftSize: document.getElementById('fftSizeSelect').value,
     deviceId: document.getElementById('deviceSelect').value,
-    showModeIndicator: showModeIndicator
+    showModeIndicator: showModeIndicator,
+    liveLineColor: liveLineColor.value,
+    peakLineColor: peakLineColor.value
   };
   document.cookie = "spectrumSettings=" + JSON.stringify(settings) + "; path=/; max-age=31536000";
 }
@@ -168,6 +174,14 @@ function loadSettings() {
       showModeIndicator = settings.showModeIndicator;
       toggleModeIndicatorCheckbox.checked = showModeIndicator;
       updateModeIndicatorVisibility();
+    }
+
+    // Load color settings
+    if (settings.liveLineColor) {
+      liveLineColor.value = settings.liveLineColor;
+    }
+    if (settings.peakLineColor) {
+      peakLineColor.value = settings.peakLineColor;
     }
 
     setTimeout(() => {
@@ -350,6 +364,7 @@ async function initApp() {
   try {
     spectrumGraph = new SpectrumGraph('canvas');
     spectrumGraph.setSettings(freqMin, freqMax, dbMin, dbMax, togglePeakHold, peakCount, peakDelta);
+    spectrumGraph.setColors(liveLineColor.value, peakLineColor.value);
 
     const playbackLine = document.getElementById('playbackLine');
     if (playbackLine) {
@@ -444,6 +459,21 @@ settingsBtn.addEventListener('change', () => {
 toggleModeIndicatorCheckbox.addEventListener('change', () => {
   showModeIndicator = toggleModeIndicatorCheckbox.checked;
   updateModeIndicatorVisibility();
+  saveSettings();
+});
+
+// Color change handlers
+liveLineColor.addEventListener('input', () => {
+  if (spectrumGraph) {
+    spectrumGraph.setColors(liveLineColor.value, peakLineColor.value);
+  }
+  saveSettings();
+});
+
+peakLineColor.addEventListener('input', () => {
+  if (spectrumGraph) {
+    spectrumGraph.setColors(liveLineColor.value, peakLineColor.value);
+  }
   saveSettings();
 });
 
