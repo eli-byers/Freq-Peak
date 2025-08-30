@@ -200,55 +200,111 @@ function initWaveformCanvas() {
   }
 }
 
-// Draw waveform visualization
+// Draw waveform visualization - attractive bar-based wave graph
 function drawWaveform(audioBuffer) {
   if (!waveformCanvas || !waveformCtx || !audioBuffer) return;
 
   const channelData = audioBuffer.getChannelData(0);
   const samples = channelData.length;
-  const step = Math.ceil(samples / waveformWidth);
 
-  waveformCtx.fillStyle = '#111';
+  // Clear canvas with dark background
+  waveformCtx.fillStyle = '#0a0a0a';
   waveformCtx.fillRect(0, 0, waveformWidth, waveformHeight);
 
+  // Find maximum amplitude for scaling (same as original)
   let maxAmplitude = 0;
   for (let i = 0; i < samples; i++) {
     const absValue = Math.abs(channelData[i]);
     if (absValue > maxAmplitude) maxAmplitude = absValue;
   }
 
+  // Preserve original scaling formula
   const scale = maxAmplitude > 0.001 ? 1 / maxAmplitude : 1000;
 
-  waveformCtx.strokeStyle = '#0ff';
-  waveformCtx.lineWidth = 1;
-  waveformCtx.beginPath();
+  // Calculate bar properties - sharp bars with exact alignment
+  const barCount = Math.min(200, Math.floor(waveformWidth / 3)); // Fewer bars for sharpness
+  const barWidth = Math.max(2, Math.floor(waveformWidth / barCount)); // Sharper bars (min 2px)
+  const barSpacing = Math.max(1, Math.floor((waveformWidth - barCount * barWidth) / (barCount + 1))); // Standard spacing
+  const centerY = waveformHeight / 2;
+  const maxBarHeight = centerY - 5; // Leave 5px gap from top/bottom edges
 
-  for (let i = 0; i < waveformWidth; i++) {
-    const sampleIndex = i * step;
-    if (sampleIndex >= samples) break;
+  // Create gradient for bars
+  const gradient = waveformCtx.createLinearGradient(0, 0, 0, waveformHeight);
+  gradient.addColorStop(0, '#00ffff');    // Cyan top
+  gradient.addColorStop(0.5, '#0080ff');  // Blue center
+  gradient.addColorStop(1, '#00ffff');    // Cyan bottom
 
-    let min = 1;
-    let max = -1;
-    for (let j = 0; j < step && sampleIndex + j < samples; j++) {
-      const sample = channelData[sampleIndex + j];
-      if (sample < min) min = sample;
-      if (sample > max) max = sample;
+  // Position bars using percentage-based alignment (matches playback indicator)
+  for (let barIndex = 0; barIndex < barCount; barIndex++) {
+    // Calculate exact bar position based on percentage (10px to waveformWidth-2px)
+    const barX = 10 + (barIndex / barCount) * (waveformWidth - 12);
+
+    // Calculate sample range for this bar (normal order: left = start, right = end)
+    const startSample = Math.floor((barIndex / barCount) * samples);
+    const endSample = Math.floor(((barIndex + 1) / barCount) * samples);
+
+    // Find min/max amplitude in this range
+    let minAmp = 1;
+    let maxAmp = -1;
+    let rmsSum = 0;
+    let sampleCount = 0;
+
+    for (let i = startSample; i < endSample && i < samples; i++) {
+      const sample = channelData[i];
+      if (sample < minAmp) minAmp = sample;
+      if (sample > maxAmp) maxAmp = sample;
+      rmsSum += sample * sample;
+      sampleCount++;
     }
 
-    const scaledMin = (1 - min * scale) * waveformHeight;
-    const scaledMax = (1 - max * scale) * waveformHeight;
+    // Calculate RMS for bar intensity
+    const rms = sampleCount > 0 ? Math.sqrt(rmsSum / sampleCount) : 0;
 
-    const y1 = Math.max(0, Math.min(waveformHeight, scaledMin));
-    const y2 = Math.max(0, Math.min(waveformHeight, scaledMax));
+    // Apply scaling (same formula as original)
+    const scaledMin = minAmp * scale;
+    const scaledMax = maxAmp * scale;
 
-    if (i === 0) {
-      waveformCtx.moveTo(i, y1);
-    } else {
-      waveformCtx.lineTo(i, y1);
+    // Calculate bar height with 5px gap constraint
+    const rawBarHeight = Math.abs(scaledMax - scaledMin) * centerY;
+    const barHeight = Math.max(2, Math.min(rawBarHeight, maxBarHeight * 2)); // Constrain to max height
+
+    // Calculate bar position (symmetrical around center, with 5px gap)
+    const barTop = Math.max(5, centerY - (scaledMax * maxBarHeight)); // Don't go above 5px
+    const barBottom = Math.min(waveformHeight - 5, centerY - (scaledMin * maxBarHeight)); // Don't go below height-5px
+
+    // Draw mirrored bars
+    waveformCtx.fillStyle = gradient;
+
+    // Top bar (above center)
+    if (barTop < centerY) {
+      const topHeight = Math.min(centerY - barTop, maxBarHeight); // Constrain height
+      waveformCtx.fillRect(barX, barTop, barWidth, topHeight);
     }
-    waveformCtx.moveTo(i, y2);
+
+    // Bottom bar (below center)
+    if (barBottom > centerY) {
+      const bottomHeight = Math.min(barBottom - centerY, maxBarHeight); // Constrain height
+      waveformCtx.fillRect(barX, centerY, barWidth, bottomHeight);
+    }
+
+    // Add RMS-based glow effect for louder sections
+    if (rms > 0.1) {
+      waveformCtx.shadowColor = '#00ffff';
+      waveformCtx.shadowBlur = rms * 10;
+      // Use constrained positions for glow effect
+      const glowTop = Math.max(5, centerY - (scaledMax * maxBarHeight));
+      const glowHeight = Math.min(barHeight, maxBarHeight * 2);
+      waveformCtx.fillRect(barX, glowTop, barWidth, glowHeight);
+      waveformCtx.shadowBlur = 0;
+    }
   }
 
+  // Draw center line
+  waveformCtx.strokeStyle = '#333';
+  waveformCtx.lineWidth = 1;
+  waveformCtx.beginPath();
+  waveformCtx.moveTo(0, centerY);
+  waveformCtx.lineTo(waveformWidth, centerY);
   waveformCtx.stroke();
 }
 
