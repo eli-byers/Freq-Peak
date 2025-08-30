@@ -278,6 +278,43 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
+function drawLabels(freqMinVal, freqMaxVal, dbMinVal, dbMaxVal) {
+  // Draw axis labels
+  ctx.fillStyle = "#fff";
+  ctx.font = "12px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("Frequency (Hz)", width/2, height-10);
+  ctx.save();
+  ctx.translate(12, height/2);
+  ctx.rotate(-Math.PI/2);
+  ctx.fillText("Amplitude (dB)", 0, 0);
+  ctx.restore();
+
+  // Draw grid line labels
+  ctx.fillStyle = "#fff";
+  ctx.font = "12px sans-serif";
+
+  // Frequency grid labels (bottom)
+  const numFreqLines = 10;
+  const freqRange = freqMaxVal - freqMinVal;
+  for(let i=1; i<numFreqLines; i++){
+    const f = freqMinVal + (freqRange * i / numFreqLines);
+    const x = 32 + (f - freqMinVal) / freqRange * (width - 64);
+    ctx.textAlign = "center";
+    ctx.fillText(f >= 1000 ? (f/1000).toFixed(1)+"k" : f.toFixed(0), x, height-35);
+  }
+
+  // dB grid labels (left)
+  const numDbLines = 5;
+  const dbRange = Math.abs(dbMinVal - dbMaxVal) || 100;
+  for(let i=1; i<numDbLines; i++){
+    const db = dbMaxVal - (dbRange * i / numDbLines);
+    const y = 10 + (1 - (db - dbMinVal) / dbRange) * (height - 62);
+    ctx.textAlign = "right";
+    ctx.fillText(db.toFixed(0), 28, y+2);
+  }
+}
+
 function drawStatic() {
   ctx.fillStyle = "#111";
   ctx.fillRect(0,0,width,height);
@@ -298,41 +335,7 @@ function drawStatic() {
 
   ctx.restore();
 
-  // Draw axis labels
-  ctx.fillStyle = "#fff";
-  ctx.font = "12px sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText("Frequency (Hz)", width/2, height-42);
-  ctx.save();
-  ctx.translate(12, height/2);
-  ctx.rotate(-Math.PI/2);
-  ctx.fillText("dB", 0, 0);
-  ctx.restore();
-
-  // Draw grid line labels
-  ctx.fillStyle = "#fff";
-  ctx.font = "12px sans-serif";
-
-  // Frequency grid labels (bottom)
-  const numFreqLines = 10;
-  const freqRange = freqMaxVal - freqMinVal;
-  for(let i=1; i<numFreqLines; i++){
-    const f = freqMinVal + (freqRange * i / numFreqLines);
-    const x = 32 + (f - freqMinVal) / freqRange * (width - 64);
-    ctx.textAlign = "center";
-    ctx.fillText(f >= 1000 ? (f/1000).toFixed(1)+"k" : f.toFixed(0), x, height-30);
-  }
-
-  // dB grid labels (left)
-  const numDbLines = 5;
-  const dbRange = Math.abs(dbMinVal - dbMaxVal) || 100;
-  for(let i=1; i<numDbLines; i++){
-    const db = dbMaxVal - (dbRange * i / numDbLines);
-    const y = 10 + (1 - (db - dbMinVal) / dbRange) * (height - 62);
-    ctx.textAlign = "right";
-    ctx.fillText(db.toFixed(0), 28, y+2);
-  }
-
+  drawLabels(freqMinVal, freqMaxVal, dbMinVal, dbMaxVal);
 }
 drawStatic();
 
@@ -380,6 +383,11 @@ function loadSettings() {
       toggleModeIndicatorCheckbox.checked = showModeIndicator;
       updateModeIndicatorVisibility();
     }
+
+    // Update the graph axes with the loaded values
+    setTimeout(() => {
+      drawStatic();
+    }, 50);
   } catch(e){}
 }
 
@@ -801,40 +809,7 @@ function drawSpectrum(isLiveMode = true) {
 
   ctx.restore(); // Restore from clip
 
-  // Draw axis labels
-  ctx.fillStyle = "#fff";
-  ctx.font = "12px sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText("Frequency (Hz)", width/2, height-42);
-  ctx.save();
-  ctx.translate(12, height/2);
-  ctx.rotate(-Math.PI/2);
-  ctx.fillText("dB", 0, 0);
-  ctx.restore();
-
-  // Draw grid line labels
-  ctx.fillStyle = "#fff";
-  ctx.font = "12px sans-serif";
-
-  // Frequency grid labels (bottom)
-  const numFreqLines = 10;
-  const freqRange = freqMaxVal - freqMinVal;
-  for(let i=1; i<numFreqLines; i++){
-    const f = freqMinVal + (freqRange * i / numFreqLines);
-    const x = 32 + (f - freqMinVal) / freqRange * (width - 64);
-    ctx.textAlign = "center";
-    ctx.fillText(f >= 1000 ? (f/1000).toFixed(1)+"k" : f.toFixed(0), x, height-30);
-  }
-
-  // dB grid labels (left)
-  const numDbLines = 5;
-  const dbRange = Math.abs(dbMinVal - dbMaxVal) || 100;
-  for(let i=1; i<numDbLines; i++){
-    const db = dbMaxVal - (dbRange * i / numDbLines);
-    const y = 10 + (1 - (db - dbMinVal) / dbRange) * (height - 62);
-    ctx.textAlign = "right";
-    ctx.fillText(db.toFixed(0), 28, y+2);
-  }
+  drawLabels(freqMinVal, freqMaxVal, dbMinVal, dbMaxVal);
 }
 
 // Convenience functions for backward compatibility
