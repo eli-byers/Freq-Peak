@@ -582,6 +582,12 @@ startBtn.onclick = async () => {
     }
     running = true;
     startBtn.title = "Stop Live Audio";
+
+    // Change icon to mic-off when live mode starts
+    const icon = startBtn.querySelector('.lucide-icon');
+    icon.setAttribute('data-lucide', 'mic-off');
+    lucide.createIcons();
+
     updateModeIndicator();
     draw();
   } else {
@@ -592,6 +598,12 @@ startBtn.onclick = async () => {
       audioCtx.close();
     }
     startBtn.title = "Start Live Audio";
+
+    // Change icon back to mic when live mode stops
+    const icon = startBtn.querySelector('.lucide-icon');
+    icon.setAttribute('data-lucide', 'mic');
+    lucide.createIcons();
+
     resetAudioLevel();
     updateModeIndicator();
   }
@@ -1361,6 +1373,14 @@ recordBtn.onclick = () => {
         startWAVRecording();
       });
     } else {
+      // Keep live mode running but update button state to show mic is available
+      startBtn.title = "Start Live Audio";
+
+      // Change icon to mic (indicating live mode is still running but mic is conceptually "available")
+      const micIcon = startBtn.querySelector('.lucide-icon');
+      micIcon.setAttribute('data-lucide', 'mic');
+      lucide.createIcons();
+
       startWAVRecording();
     }
   } else {

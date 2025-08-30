@@ -190,10 +190,10 @@ label {
 }
 canvas {
   position: absolute;
-  top: 110px; /* Default: 50px header + 60px playback bar */
+  top: 70px; /* 50px header + 20px space */
   left: 20px;
   width: calc(100% - 40px);
-  height: calc(100vh - 130px); /* Default height calculation */
+  height: calc(100vh - 90px); /* Adjusted for 20px space */
   display: block;
   cursor: crosshair;
   transition: top 0.3s ease, height 0.3s ease;
@@ -202,8 +202,8 @@ canvas {
 /* When playback bar is visible, push canvas down */
 .playback-bar[style*="display: flex"] ~ canvas,
 .playback-bar[style*="display: block"] ~ canvas {
-  top: 170px; /* 50px header + 120px extended playback bar */
-  height: calc(100vh - 190px); /* Adjusted height */
+  top: 170px; /* 50px header + 120px playback bar */
+  height: calc(100vh - 190px); /* Adjusted height for playback bar */
 }
 .audio-level {
   display: flex;
