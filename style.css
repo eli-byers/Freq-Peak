@@ -161,6 +161,13 @@ canvas {
   min-width: 25px;
 }
 
+.progress-time {
+  margin-left: 15px;
+  font-size: 11px;
+  color: #ccc;
+  min-width: 80px;
+}
+
 .playback-bar .playback-info {
   margin-left: auto;
   display: flex;
@@ -185,33 +192,45 @@ canvas {
   min-width: 25px;
 }
 
-.progress-section {
-  margin: 0 15px;
-  flex: 1;
+.waveform-container {
+  position: fixed;
+  top: 90px; /* 50px (playback bar) + 40px (playback bar height) */
+  left: 0px;
+  right: 0px;
+  height: 80px;
+  background: rgba(17, 34, 34, 0.95);
+  border-top: 1px solid #444;
   display: flex;
   align-items: center;
+  justify-content: center;
+  padding: 5px 10px; /* Use margin instead of padding for simpler positioning */
+  box-sizing: border-box;
+  z-index: 998; /* Below playback bar (999) but above other content */
 }
 
-.progress-bar {
-  flex: 1;
-  height: 8px;
-  background: #333;
+.waveform-container canvas {
+  position: static;
+  width: 100%;
+  height: 70px;
+  background: #111;
   border-radius: 4px;
-  cursor: pointer;
-  margin-right: 10px;
-  position: relative;
+  border: 1px solid #333;
 }
 
-.progress-fill {
-  height: 100%;
-  background: #0ff;
-  border-radius: 4px;
-  transition: width 0.1s ease;
-}
-
-.progress-time {
-  font-size: 11px;
-  color: #ccc;
-  min-width: 80px;
-  text-align: right;
+.playback-line {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 10px;
+  width: 2px;
+  background: white;
+  border-radius: 1px;
+  box-shadow: 0 0 4px rgba(255, 255, 0, 0.5);
+  pointer-events: none;
+  z-index: 10;
+  transition: left 0.1s ease;
+  /* Ensure it's visible and positioned correctly */
+  display: block !important;
+  opacity: 1 !important;
+  visibility: visible !important;
 }

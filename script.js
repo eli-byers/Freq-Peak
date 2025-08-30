@@ -95,6 +95,70 @@ let recordedChunks = [];
 let recordedBlob = null;
 let safeStream = null; // Single stream shared between AudioContext and MediaRecorder
 
+// Waveform visualization
+let waveformCanvas, waveformCtx;
+let waveformWidth, waveformHeight;
+
+function initWaveformCanvas() {
+  waveformCanvas = document.getElementById('waveformCanvas');
+  if (waveformCanvas) {
+    waveformCtx = waveformCanvas.getContext('2d');
+    waveformWidth = waveformCanvas.width;
+    waveformHeight = waveformCanvas.height;
+  }
+}
+
+function drawWaveform(audioBuffer) {
+  if (!waveformCanvas || !waveformCtx || !audioBuffer) return;
+
+  const channelData = audioBuffer.getChannelData(0);
+  const samples = channelData.length;
+  const step = Math.ceil(samples / waveformWidth);
+
+  // Clear canvas
+  waveformCtx.fillStyle = '#111';
+  waveformCtx.fillRect(0, 0, waveformWidth, waveformHeight);
+
+  // Draw center line
+  waveformCtx.strokeStyle = '#333';
+  waveformCtx.lineWidth = 1;
+  waveformCtx.beginPath();
+  waveformCtx.moveTo(0, waveformHeight / 2);
+  waveformCtx.lineTo(waveformWidth, waveformHeight / 2);
+  waveformCtx.stroke();
+
+  // Draw waveform
+  waveformCtx.strokeStyle = '#0ff';
+  waveformCtx.lineWidth = 1;
+  waveformCtx.beginPath();
+
+  for (let i = 0; i < waveformWidth; i++) {
+    const sampleIndex = i * step;
+    if (sampleIndex >= samples) break;
+
+    // Get peak value in this segment
+    let min = 1;
+    let max = -1;
+    for (let j = 0; j < step && sampleIndex + j < samples; j++) {
+      const sample = channelData[sampleIndex + j];
+      if (sample < min) min = sample;
+      if (sample > max) max = sample;
+    }
+
+    const y1 = (1 - min) * waveformHeight / 2;
+    const y2 = (1 - max) * waveformHeight / 2;
+
+    if (i === 0) {
+      waveformCtx.moveTo(i, y1);
+    } else {
+      waveformCtx.lineTo(i, y1);
+    }
+    waveformCtx.moveTo(i, y2);
+  }
+
+  waveformCtx.stroke();
+}
+
 function resize() {
   width = canvas.clientWidth;
   height = canvas.clientHeight;
@@ -298,6 +362,17 @@ async function startLiveVisualization() {
 async function initApp() {
   await populateDevices();
   await requestMicPermission();
+  initWaveformCanvas();
+
+  // Initialize playback line position - ensure it's at canvas left edge
+  const playbackLine = document.getElementById('playbackLine');
+  if (playbackLine) {
+    playbackLine.style.left = '10px'; // Start at canvas left edge
+    playbackLine.style.display = 'block';
+    playbackLine.style.opacity = '1';
+    playbackLine.style.visibility = 'visible';
+    console.log('Playback line initialized at 10px with forced visibility');
+  }
 }
 
 initApp();
@@ -684,7 +759,16 @@ audioFileInput.onchange = async (event) => {
   const file = event.target.files[0];
   if (file) {
     const arrayBuffer = await file.arrayBuffer();
+
+    // Create AudioContext if it doesn't exist
+    if (!audioCtx || audioCtx.state === 'closed') {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+
     audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+
+    // Draw waveform visualization
+    drawWaveform(audioBuffer);
 
     // Show playback bar with filename
     fileName.textContent = file.name;
@@ -719,7 +803,10 @@ clearBtn.onclick = () => {
 
   playbackBar.style.display = 'none';
   fileName.textContent = '_';
-  progressFill.style.width = '0%';
+  const playbackLine = document.getElementById('playbackLine');
+  if (playbackLine) {
+    playbackLine.style.left = '10px'; // Reset to canvas left edge
+  }
   currentTime.textContent = '0:00';
   totalTime.textContent = '0:00';
 
@@ -812,12 +899,16 @@ playBtn.onclick = () => {
     currentTime.textContent = '0:00';
 
     // Progress tracking during playback
-    const startTime = audioCtx.currentTime;
+    let startTime = audioCtx.currentTime;
+    const playbackLine = document.getElementById('playbackLine');
+
     function updateProgress() {
       if (isPlaying && playbackSource) {
         const currentProgress = audioCtx.currentTime - startTime;
         const progressPercent = (currentProgress / totalSeconds) * 100;
-        progressFill.style.width = Math.min(progressPercent, 100) + '%';
+        // Position line from 10px (canvas left edge) to calc(100% - 12px) (canvas right edge, accounting for 2px line width)
+        const leftPosition = Math.min(progressPercent, 100);
+        playbackLine.style.left = `calc(10px + ${leftPosition}% - 2px)`;
         currentTime.textContent = formatTime(currentProgress);
       }
       if (isPlaying) {
@@ -830,11 +921,15 @@ playBtn.onclick = () => {
       isPlaying = false;
       playBtn.style.display = 'inline-block';
       pauseBtn.style.display = 'none';
-      progressFill.style.width = '100%';
+      playbackLine.style.left = 'calc(100% - 12px)'; // Align with canvas right edge, accounting for 2px line width
       currentTime.textContent = totalTime.textContent;
       resetAudioLevel();
       updateModeIndicator();
     };
+
+    // Reset start time and playback line to start position before starting playback
+    startTime = audioCtx.currentTime;
+    playbackLine.style.left = '10px';
 
     playbackSource.start();
     isPlaying = true;
@@ -853,12 +948,16 @@ playBtn.onclick = () => {
 
 // Pause button functionality
 pauseBtn.onclick = () => {
-  if (audioCtx && audioCtx.state === 'running') {
-    audioCtx.suspend();
+  if (isPlaying) {
+    // Stop the current playback source
+    if (playbackSource) {
+      playbackSource.stop();
+      playbackSource.disconnect();
+      playbackSource = null;
+    }
     isPlaying = false;
     playBtn.style.display = 'inline-block';
     pauseBtn.style.display = 'none';
-    running = false;
     updateModeIndicator();
   }
 };
@@ -1048,6 +1147,9 @@ function createPlaybackBufferFromBlob(blob) {
       audioBuffer = decodedBuffer;
       fileName.textContent = 'recorded_audio.wav';
       playbackBar.style.display = 'flex';
+
+      // Draw waveform visualization
+      drawWaveform(decodedBuffer);
 
       // Update duration display
       const duration = decodedBuffer.duration;

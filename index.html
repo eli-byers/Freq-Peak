@@ -31,18 +31,17 @@
       <button id="playBtn">▶</button>
       <button id="pauseBtn" style="display: none;">⏸</button>
     </div>
-    <div class="progress-section">
-      <div class="progress-bar">
-        <div id="progressFill" class="progress-fill" style="width: 0%;"></div>
-      </div>
-      <div class="progress-time">
-        <span id="currentTime">0:00</span>/<span id="totalTime">0:00</span>
-      </div>
+    <div class="progress-time">
+      <span id="currentTime">0:00</span>/<span id="totalTime">0:00</span>
     </div>
     <div class="playback-info">
       <span id="fileName">_</span>
       <button id="downloadBtn" title="Download">↓</button>
       <button id="clearBtn" title="Clear">×</button>
+    </div>
+    <div class="waveform-container">
+      <canvas id="waveformCanvas" width="800" height="80"></canvas>
+      <div id="playbackLine" class="playback-line" style="left: 0%;"></div>
     </div>
   </div>
   <div class="overlay">
