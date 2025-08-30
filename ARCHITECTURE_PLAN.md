@@ -19,32 +19,37 @@ This document outlines a comprehensive rearchitecture plan to improve code organ
 
 ```
 SpectrumAnalyzer (Main Orchestrator)
-├── AudioManager (Audio processing & Web Audio API)
+├── AudioHandler (Platform-specific audio processing)
+│   ├── BrowserAudioHandler (Web browser implementation)
+│   └── ElectronAudioHandler (Electron implementation)
 ├── SpectrumGraph (Pure drawing logic)
 ├── AudioLevelIndicator (UI updates for level bars)
 ├── SettingsManager (Configuration persistence)
-├── RecordingManager (Audio recording functionality)
 └── UIManager (General UI orchestration)
 ```
 
 ### Component Responsibilities
 
-#### 1. AudioManager
-**File**: `audio-manager.js`
+#### 1. AudioHandler (Abstract Interface)
+**Files**: `browser-audio-handler.js`, `electron-audio-handler.js`
 **Responsibilities**:
-- Web Audio API context management
-- Audio stream handling
-- Analyser node configuration
-- Audio data processing
-- Sample rate management
+- Platform-specific Web Audio API context management
+- Audio stream handling and microphone permissions
+- Analyser node configuration and data processing
+- Recording functionality (MediaRecorder vs ScriptProcessor)
+- Sample rate management and optimization
 
-**Interface**:
+**Unified Interface**:
 ```javascript
-class AudioManager {
+class AudioHandler {
   constructor();
   async initialize();
   async requestMicrophonePermission();
-  createAnalyser();
+  async startLiveVisualization();
+  async stopLiveVisualization();
+  async startRecording();
+  async stopRecording();
+  getRecordingBlob();
   getFrequencyData();
   calculateRMSLevel();
   dispose();

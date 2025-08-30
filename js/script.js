@@ -1,5 +1,10 @@
+/**
+ * Main application script for Freq-Peak
+ * Handles UI interactions and coordinates with audio handler
+ */
+
+// UI Element references
 const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
 const tooltip = document.getElementById('tooltip');
 const startBtn = document.getElementById('startBtn');
 const recordBtn = document.getElementById('recordBtn');
@@ -20,30 +25,78 @@ const AppState = {
   IDLE: 'Idle',
   LIVE: 'Live Mode',
   RECORDING: 'Recording Mode',
-  PLAYBACK_READY: 'Playback Mode', // Have recorded audio ready to play
-  PLAYING: 'Playback Mode' // Currently playing audio
+  PLAYBACK_READY: 'Playback Mode',
+  PLAYING: 'Playback Mode'
 };
 
 let currentMode = AppState.IDLE;
-let showModeIndicator = false; // Default to hidden
+let showModeIndicator = false;
 const modeIndicator = document.createElement('div');
-modeIndicator.style.cssText = 'font-size: 12px; color: #ccc; padding: 5px 10px; background: #222; border-radius: 4px; display: none;'; // Hidden by default
+modeIndicator.style.cssText = 'font-size: 12px; color: #ccc; padding: 5px 10px; background: #222; border-radius: 4px; display: none;';
 document.querySelector('.header').appendChild(modeIndicator);
 
 // High-quality WAV recording URL for downloads
 let recordedWavUrl = null;
+let recordedBlob = null;
 
+// Audio handler instance
+let audioHandler = null;
+
+// Get references to input elements for settings
+const freqMin = document.getElementById('freqMin');
+const freqMax = document.getElementById('freqMax');
+const dbMin = document.getElementById('dbMin');
+const dbMax = document.getElementById('dbMax');
+const togglePeakHold = document.getElementById('togglePeakHold');
+const peakCount = document.getElementById('peakCount');
+const peakDelta = document.getElementById('peakDelta');
+const toggleModeIndicatorCheckbox = document.getElementById('toggleModeIndicator');
+
+// Canvas dimensions
+let width, height;
+let latestPeaks = [];
+
+// Waveform visualization
+let waveformCanvas, waveformCtx;
+let waveformWidth, waveformHeight;
+
+// Create spectrum graph instance
+let spectrumGraph;
+
+// Audio file loading and playback functionality
+let audioBuffer = null;
+let playbackSource = null;
+let isPlaying = false;
+
+// Import and initialize the appropriate audio handler
+async function initializeAudioHandler() {
+  try {
+    const { BrowserAudioHandler } = await import('./browser-audio-handler.js');
+    audioHandler = new BrowserAudioHandler();
+    const success = await audioHandler.initialize();
+    if (success) {
+      console.log('✅ Audio handler initialized successfully');
+    } else {
+      console.log('⚠️ Audio handler initialized with limited functionality');
+    }
+  } catch (error) {
+    console.error('❌ Failed to initialize audio handler:', error);
+    audioHandler = null;
+    console.log('⚠️ Audio system not available - some features may not work');
+  }
+}
+
+// Update mode indicator
 function updateModeIndicator() {
   const previousMode = currentMode;
 
-  // Determine new mode based on current state
-  if (recording) {
+  if (audioHandler && audioHandler.isRecording()) {
     currentMode = AppState.RECORDING;
   } else if (isPlaying) {
     currentMode = AppState.PLAYING;
   } else if (audioBuffer && playbackBar.style.display === 'flex') {
     currentMode = AppState.PLAYBACK_READY;
-  } else if (running) {
+  } else if (audioHandler && audioHandler.isRunning()) {
     currentMode = AppState.LIVE;
   } else {
     currentMode = AppState.IDLE;
@@ -71,141 +124,63 @@ function toggleModeIndicator() {
   saveSettings();
 }
 
-// Get references to input elements for settings
-const freqMin = document.getElementById('freqMin');
-const freqMax = document.getElementById('freqMax');
-const dbMin = document.getElementById('dbMin');
-const dbMax = document.getElementById('dbMax');
-const togglePeakHold = document.getElementById('togglePeakHold');
-const peakCount = document.getElementById('peakCount');
-const peakDelta = document.getElementById('peakDelta');
-const toggleModeIndicatorCheckbox = document.getElementById('toggleModeIndicator');
+// Save settings to cookie
+function saveSettings() {
+  const settings = {
+    freqMin: freqMin.value,
+    freqMax: freqMax.value,
+    dbMin: dbMin.value,
+    dbMax: dbMax.value,
+    togglePeakHold: togglePeakHold.checked,
+    peakCount: peakCount.value,
+    peakDelta: peakDelta.value,
+    fftSize: document.getElementById('fftSizeSelect').value,
+    deviceId: document.getElementById('deviceSelect').value,
+    showModeIndicator: showModeIndicator
+  };
+  document.cookie = "spectrumSettings=" + JSON.stringify(settings) + "; path=/; max-age=31536000";
+}
 
-// Dynamic frequency validation based on actual sample rate
-let currentSampleRate = 44100;
-let currentNyquistFreq = currentSampleRate / 2;
-
-// Check if higher sample rates are supported
-async function checkMaxSampleRate() {
+// Load settings from cookie
+function loadSettings() {
+  const cookies = document.cookie.split(';').map(c => c.trim());
+  const c = cookies.find(c => c.startsWith("spectrumSettings="));
+  if (!c) return;
   try {
-    // Try to get user media with higher sample rates
-    const testRates = [96000, 48000, 44100];
-    for (const rate of testRates) {
-      try {
-        const testStream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            sampleRate: rate,
-            channelCount: 1
-          }
-        });
-        testStream.getTracks().forEach(track => track.stop());
-        console.log(`✅ Sample rate ${rate} Hz is supported`);
-        currentSampleRate = rate;
-        currentNyquistFreq = rate / 2;
-        return rate;
-      } catch (e) {
-        console.log(`❌ Sample rate ${rate} Hz not supported`);
-      }
+    const settings = JSON.parse(c.split('=')[1]);
+    freqMin.value = settings.freqMin;
+    freqMax.value = settings.freqMax;
+    dbMin.value = settings.dbMin;
+    dbMax.value = settings.dbMax;
+    togglePeakHold.checked = settings.togglePeakHold;
+    peakCount.value = settings.peakCount;
+    peakDelta.value = settings.peakDelta;
+    if (settings.fftSize) document.getElementById('fftSizeSelect').value = settings.fftSize;
+    if (settings.deviceId) {
+      setTimeout(() => {
+        const select = document.getElementById('deviceSelect');
+        if (select.querySelector(`option[value="${settings.deviceId}"]`)) {
+          select.value = settings.deviceId;
+        }
+      }, 100);
     }
+    if (settings.showModeIndicator !== undefined) {
+      showModeIndicator = settings.showModeIndicator;
+      toggleModeIndicatorCheckbox.checked = showModeIndicator;
+      updateModeIndicatorVisibility();
+    }
+
+    setTimeout(() => {
+      spectrumGraph.drawStatic();
+    }, 50);
   } catch (e) {
-    console.log('Could not test sample rates:', e);
-  }
-  currentSampleRate = 44100;
-  currentNyquistFreq = 22050;
-  return 44100; // Fallback to default
-}
-
-// Update frequency limits when audio context changes
-function updateFrequencyLimits() {
-  if (audioCtx && audioCtx.sampleRate) {
-    currentSampleRate = audioCtx.sampleRate;
-    currentNyquistFreq = audioCtx.sampleRate / 2;
-    console.log(`🎵 Updated frequency limits: Max ${currentNyquistFreq.toFixed(0)} Hz (Sample rate: ${currentSampleRate} Hz)`);
+    console.error('Error loading settings:', e);
   }
 }
 
-// Add input validation for frequency ranges
-function validateFrequencyInputs() {
-  const minVal = parseFloat(freqMin.value);
-  const maxVal = parseFloat(freqMax.value);
+loadSettings();
 
-  // Ensure minimum frequency is not negative
-  if (minVal < 0) {
-    freqMin.value = 0;
-  }
-
-  // Ensure maximum frequency doesn't exceed current Nyquist frequency
-  if (maxVal > currentNyquistFreq) {
-    freqMax.value = currentNyquistFreq;
-    console.log(`🔧 Adjusted max frequency to ${currentNyquistFreq.toFixed(0)} Hz (Nyquist limit)`);
-  }
-
-  // Ensure minimum is less than maximum
-  if (minVal >= maxVal) {
-    if (maxVal <= 100) {
-      freqMin.value = Math.max(0, maxVal - 100);
-    } else {
-      freqMax.value = Math.min(currentNyquistFreq, minVal + 100);
-    }
-  }
-}
-
-// Add event listeners for frequency input validation
-freqMin.addEventListener('input', validateFrequencyInputs);
-freqMin.addEventListener('change', validateFrequencyInputs);
-freqMax.addEventListener('input', validateFrequencyInputs);
-freqMax.addEventListener('change', validateFrequencyInputs);
-
-// Set default frequency range if not set
-if (!freqMin.value) freqMin.value = 20; // Start from 20Hz (human hearing range)
-if (!freqMax.value) freqMax.value = 20000; // Up to 20kHz (most of human hearing range)
-// Immediately update analyser when FFT size changes
-const fftSizeSelect = document.getElementById('fftSizeSelect');
-
-fftSizeSelect.addEventListener('change', () => {
-  if (running) {
-    const oldBufferLength = bufferLength;
-    source.disconnect(analyser);
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = parseInt(fftSizeSelect.value);
-    analyser.smoothingTimeConstant = 0.0;
-    bufferLength = analyser.frequencyBinCount;
-    dataArray = new Float32Array(bufferLength);
-    const newPeakHold = new Float32Array(bufferLength).fill(-Infinity);
-    for(let i=0; i<Math.min(oldBufferLength, bufferLength); i++) {
-      newPeakHold[i] = peakHoldArray[i];
-    }
-    peakHoldArray = newPeakHold;
-    source.connect(analyser);
-  }
-});
-
-// Handle mode indicator toggle
-toggleModeIndicatorCheckbox.addEventListener('change', () => {
-  showModeIndicator = toggleModeIndicatorCheckbox.checked;
-  updateModeIndicatorVisibility();
-  saveSettings();
-});
-
-let audioCtx, analyser, dataArray, bufferLength, source;
-let peakHoldArray = [];
-let running = false;
-// Canvas dimensions
-let width, height;
-let latestPeaks = [];
-// 🎙️ MediaRecorder variables for proper recording
-let mediaRecorder = null;
-let recordedChunks = [];
-let recordedBlob = null;
-let safeStream = null; // Single stream shared between AudioContext and MediaRecorder
-
-// Waveform visualization
-let waveformCanvas, waveformCtx;
-let waveformWidth, waveformHeight;
-
-// Create spectrum graph instance
-let spectrumGraph;
-
+// Initialize canvas and resize handler
 function resize() {
   width = canvas.clientWidth;
   height = canvas.clientHeight;
@@ -215,6 +190,7 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
+// Initialize waveform canvas
 function initWaveformCanvas() {
   waveformCanvas = document.getElementById('waveformCanvas');
   if (waveformCanvas) {
@@ -224,6 +200,7 @@ function initWaveformCanvas() {
   }
 }
 
+// Draw waveform visualization
 function drawWaveform(audioBuffer) {
   if (!waveformCanvas || !waveformCtx || !audioBuffer) return;
 
@@ -231,21 +208,17 @@ function drawWaveform(audioBuffer) {
   const samples = channelData.length;
   const step = Math.ceil(samples / waveformWidth);
 
-  // Clear canvas
   waveformCtx.fillStyle = '#111';
   waveformCtx.fillRect(0, 0, waveformWidth, waveformHeight);
 
-  // Find the maximum absolute amplitude to scale the waveform
   let maxAmplitude = 0;
   for (let i = 0; i < samples; i++) {
     const absValue = Math.abs(channelData[i]);
     if (absValue > maxAmplitude) maxAmplitude = absValue;
   }
 
-  // If maxAmplitude is very small (quiet audio), set a minimum scale
   const scale = maxAmplitude > 0.001 ? 1 / maxAmplitude : 1000;
 
-  // Draw waveform
   waveformCtx.strokeStyle = '#0ff';
   waveformCtx.lineWidth = 1;
   waveformCtx.beginPath();
@@ -254,7 +227,6 @@ function drawWaveform(audioBuffer) {
     const sampleIndex = i * step;
     if (sampleIndex >= samples) break;
 
-    // Get peak value in this segment
     let min = 1;
     let max = -1;
     for (let j = 0; j < step && sampleIndex + j < samples; j++) {
@@ -263,11 +235,9 @@ function drawWaveform(audioBuffer) {
       if (sample > max) max = sample;
     }
 
-    // Scale the waveform to fill the entire canvas height
     const scaledMin = (1 - min * scale) * waveformHeight;
     const scaledMax = (1 - max * scale) * waveformHeight;
 
-    // Ensure we don't go outside the canvas bounds
     const y1 = Math.max(0, Math.min(waveformHeight, scaledMin));
     const y2 = Math.max(0, Math.min(waveformHeight, scaledMax));
 
@@ -282,343 +252,87 @@ function drawWaveform(audioBuffer) {
   waveformCtx.stroke();
 }
 
-function saveSettings() {
-  const settings = {
-    freqMin: freqMin.value,
-    freqMax: freqMax.value,
-    dbMin: dbMin.value,
-    dbMax: dbMax.value,
-    togglePeakHold: togglePeakHold.checked,
-    peakCount: peakCount.value,
-    peakDelta: peakDelta.value,
-    fftSize: fftSizeSelect.value,
-    deviceId: document.getElementById('deviceSelect').value,
-    showModeIndicator: showModeIndicator
-  };
-  document.cookie = "spectrumSettings=" + JSON.stringify(settings) + "; path=/; max-age=31536000";
+// Format time for display
+function formatTime(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-function loadSettings() {
-  const cookies = document.cookie.split(';').map(c=>c.trim());
-  const c = cookies.find(c=>c.startsWith("spectrumSettings="));
-  if(!c) return;
-  try {
-    const settings = JSON.parse(c.split('=')[1]);
-    freqMin.value = settings.freqMin;
-    freqMax.value = settings.freqMax;
-    dbMin.value = settings.dbMin;
-    dbMax.value = settings.dbMax;
-    togglePeakHold.checked = settings.togglePeakHold;
-    peakCount.value = settings.peakCount;
-    peakDelta.value = settings.peakDelta;
-    if(settings.fftSize) fftSizeSelect.value = settings.fftSize;
-    if(settings.deviceId) {
-      // Set deviceId after devices are populated
-      setTimeout(() => {
-        const select = document.getElementById('deviceSelect');
-        if(select.querySelector(`option[value="${settings.deviceId}"]`)) {
-          select.value = settings.deviceId;
-        }
-      }, 100);
-    }
-    if(settings.showModeIndicator !== undefined) {
-      showModeIndicator = settings.showModeIndicator;
-      toggleModeIndicatorCheckbox.checked = showModeIndicator;
-      updateModeIndicatorVisibility();
-    }
-
-    // Update the graph axes with the loaded values
-    setTimeout(() => {
-      spectrumGraph.drawStatic();
-    }, 50);
-  } catch(e){}
-}
-
-loadSettings();
-
-async function populateDevices() {
-  try {
-    // Check if MediaDevices API is available
-    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
-      console.warn('MediaDevices API not available');
-      const select = document.getElementById('deviceSelect');
-      select.innerHTML = '<option value="">MediaDevices API not supported</option>';
-      return;
-    }
-
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const select = document.getElementById('deviceSelect');
-    select.innerHTML = '';
-
-    // Filter for audio input devices
-    const audioInputs = devices.filter(d => d.kind === 'audioinput');
-
-    if (audioInputs.length === 0) {
-      select.innerHTML = '<option value="">No audio input devices found</option>';
-      return;
-    }
-
-    audioInputs.forEach(d => {
-      const opt = document.createElement('option');
-      opt.value = d.deviceId;
-      opt.textContent = d.label || `Input ${select.length+1}`;
-      select.appendChild(opt);
-    });
-
-    console.log(`Found ${audioInputs.length} audio input device(s)`);
-  } catch (error) {
-    console.error('Error populating devices:', error);
-    const select = document.getElementById('deviceSelect');
-    select.innerHTML = '<option value="">Error loading devices</option>';
-  }
-}
-
-async function requestMicPermission() {
-  try {
-    // Check if MediaDevices API is available
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      console.warn('MediaDevices API not available - microphone access will be requested on demand');
-      return;
-    }
-
-    // Check if Permissions API is available
-    if (navigator.permissions && navigator.permissions.query) {
-      try {
-        const permissionStatus = await navigator.permissions.query({ name: 'microphone' });
-        if (permissionStatus.state === 'granted') {
-          console.log('Microphone permission already granted');
-          return; // Don't request again
-        }
-      } catch (e) {
-        console.log('Permissions API query failed:', e);
-      }
-    }
-
-    const deviceId = document.getElementById('deviceSelect').value;
-    safeStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        deviceId: deviceId,
-        sampleRate: 44100,
-        channelCount: 1
-      }
-    });
-    console.log('Microphone permission granted on load');
-  } catch (error) {
-    console.error('Microphone permission denied or API not available:', error);
-    // Don't show alert on load - let user request permission when they click Start
-  }
-}
-
-async function startLiveVisualization() {
-  const deviceId = document.getElementById('deviceSelect').value;
-
-  // Check if we need a new stream (different device or no existing stream)
-  const currentDeviceId = safeStream ? safeStream.getAudioTracks()[0]?.getSettings().deviceId : null;
-  if (!safeStream || currentDeviceId !== deviceId) {
-    // Stop existing stream if any
-    if (safeStream) {
-      safeStream.getTracks().forEach(track => track.stop());
-    }
-
-    // Get new stream for the selected device
-    safeStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        deviceId: deviceId,
-        sampleRate: 44100,
-        channelCount: 1
-      }
-    });
-  }
-
-  // Set up AudioContext with this stream
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  analyser = audioCtx.createAnalyser();
-  analyser.fftSize = parseInt(fftSizeSelect.value);
-  analyser.smoothingTimeConstant = 0.0;
-  bufferLength = analyser.frequencyBinCount;
-  dataArray = new Float32Array(bufferLength);
-  source = audioCtx.createMediaStreamSource(safeStream);
-
-  // Set up MediaRecorder with SAME stream
-  mediaRecorder = new MediaRecorder(safeStream, {
-    mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm'
-  });
-
-  recordedChunks = [];
-  mediaRecorder.ondataavailable = (event) => {
-    if (event.data && event.data.size > 0) {
-      recordedChunks.push(event.data);
-    }
-  };
-
-  // Connect only to analyser for visualization
-  source.connect(analyser);
-
-  if(peakHoldArray.length !== bufferLength){
-    peakHoldArray = new Float32Array(bufferLength).fill(-Infinity);
-  }
-  running = true;
-  startBtn.title = "Stop Live Audio";
-  updateModeIndicator();
-
-  // Set audio context in spectrum graph for live mode
-  spectrumGraph.setAudioContext(audioCtx, analyser, dataArray, bufferLength, source, true);
-  spectrumGraph.draw();
-}
-
+// Initialize app
 async function initApp() {
-  await populateDevices();
-  await requestMicPermission();
+  await initializeAudioHandler();
+
+  if (!audioHandler) {
+    console.error('Audio handler failed to initialize, some features may not work');
+  } else {
+    try {
+      const devices = await audioHandler.populateDevices();
+      const select = document.getElementById('deviceSelect');
+      select.innerHTML = '';
+
+      if (devices && devices.length > 0) {
+        devices.forEach(d => {
+          const opt = document.createElement('option');
+          opt.value = d.deviceId;
+          opt.textContent = d.label || `Input ${select.length + 1}`;
+          select.appendChild(opt);
+        });
+        console.log(`Found ${devices.length} audio input device(s)`);
+      } else {
+        select.innerHTML = '<option value="">No audio input devices found</option>';
+      }
+    } catch (error) {
+      console.error('Error populating devices:', error);
+      const select = document.getElementById('deviceSelect');
+      select.innerHTML = '<option value="">Error loading devices</option>';
+    }
+  }
+
   initWaveformCanvas();
 
-  // Initialize spectrum graph
-  spectrumGraph = new SpectrumGraph('canvas');
-  spectrumGraph.setSettings(freqMin, freqMax, dbMin, dbMax, togglePeakHold, peakCount, peakDelta);
+  try {
+    spectrumGraph = new SpectrumGraph('canvas');
+    spectrumGraph.setSettings(freqMin, freqMax, dbMin, dbMax, togglePeakHold, peakCount, peakDelta);
 
-  // Initialize playback line position - ensure it's at canvas left edge
-  const playbackLine = document.getElementById('playbackLine');
-  if (playbackLine) {
-    playbackLine.style.left = '10px'; // Start at canvas left edge
-    playbackLine.style.display = 'block';
-    playbackLine.style.opacity = '1';
-    playbackLine.style.visibility = 'visible';
+    const playbackLine = document.getElementById('playbackLine');
+    if (playbackLine) {
+      playbackLine.style.left = '10px';
+      playbackLine.style.display = 'block';
+      playbackLine.style.opacity = '1';
+      playbackLine.style.visibility = 'visible';
+    }
+
+    spectrumGraph.drawStatic();
+  } catch (error) {
+    console.error('Error initializing spectrum graph:', error);
   }
 
-  // Initialize Lucide icons
   if (typeof lucide !== 'undefined') {
     lucide.createIcons();
   } else {
-    // Fallback: Initialize icons after a short delay to ensure library is loaded
     setTimeout(() => {
       if (typeof lucide !== 'undefined') {
         lucide.createIcons();
       }
     }, 100);
   }
-
-  // Draw initial static graph
-  spectrumGraph.drawStatic();
 }
 
 initApp();
 
-const resetAudioLevel = () => {
-  const bars = document.querySelectorAll('#audioLevel .level-bar');
-  bars.forEach(bar => {
-    const base = bar.dataset.level;
-    const isLow = base === '-Inf' || Number(base) <= -80;
-    const isMid = Number(base) > -80 && Number(base) < -20;
-    const isHigh = Number(base) >= -20;
-    const offClass = isLow ? 'low-off' : isMid ? 'mid-off' : 'high-off';
-    bar.className = `level-bar ${offClass}`;
-  });
-};
+// Event handlers
 
-startBtn.onclick = async () => {
-  // If we're in playback mode, stop it and go to live mode
-  if (isPlaying) {
-    console.log('Stopping playback and switching to Live Mode');
-    if (playbackSource) {
-      playbackSource.stop();
-      playbackSource.disconnect();
-    }
-    if (audioCtx) {
-      audioCtx.close();
-    }
-    isPlaying = false;
-    playBtn.style.display = 'inline-block';
-    pauseBtn.style.display = 'none';
-    progressFill.style.width = '0%';
-    currentTime.textContent = '0:00';
-    totalTime.textContent = '0:00';
-    resetAudioLevel();
+// Canvas click handler
+canvas.addEventListener('click', () => {
+  if (audioHandler && audioHandler.peakHoldArray) {
+    audioHandler.peakHoldArray.fill(-Infinity);
   }
-
-  if(!running){
-    console.log('Starting Live Mode');
-    const deviceId = document.getElementById('deviceSelect').value;
-
-    // Use existing stream if available and device hasn't changed
-    if (!safeStream) {
-      // No existing stream, request permission
-      safeStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          deviceId: deviceId,
-          sampleRate: 44100,
-          channelCount: 1
-        }
-      });
-    }
-
-    // Set up AudioContext with this stream
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    updateFrequencyLimits(); // Update frequency limits based on actual sample rate
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = parseInt(fftSizeSelect.value);
-    analyser.smoothingTimeConstant = 0.0;
-    bufferLength = analyser.frequencyBinCount;
-    dataArray = new Float32Array(bufferLength);
-    source = audioCtx.createMediaStreamSource(safeStream);
-
-    // Set up MediaRecorder with SAME stream
-    mediaRecorder = new MediaRecorder(safeStream, {
-      mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm'
-    });
-
-    recordedChunks = [];
-    mediaRecorder.ondataavailable = (event) => {
-      if (event.data && event.data.size > 0) {
-        recordedChunks.push(event.data);
-      }
-    };
-
-    // Connect only to analyser for visualization
-    source.connect(analyser);
-
-    if(peakHoldArray.length !== bufferLength){
-      peakHoldArray = new Float32Array(bufferLength).fill(-Infinity);
-    }
-    running = true;
-    startBtn.title = "Stop Live Audio";
-
-    // Change icon to mic-off when live mode starts
-    const icon = startBtn.querySelector('.lucide-icon');
-    icon.setAttribute('data-lucide', 'mic-off');
-    lucide.createIcons();
-
-    updateModeIndicator();
-
-    // Set audio context in spectrum graph for live mode
-    spectrumGraph.setAudioContext(audioCtx, analyser, dataArray, bufferLength, source);
-    spectrumGraph.draw();
-
-  } else {
-    console.log('Stopping Live Mode');
-    running = false;
-    // Don't stop the stream here, keep it for reuse
-    if (audioCtx) {
-      audioCtx.close();
-    }
-    startBtn.title = "Start Live Audio";
-
-    // Change icon back to mic when live mode stops
-    const icon = startBtn.querySelector('.lucide-icon');
-    icon.setAttribute('data-lucide', 'mic');
-    lucide.createIcons();
-
-    resetAudioLevel();
-    updateModeIndicator();
-  }
-};
-
-canvas.addEventListener('click', ()=>{
-  peakHoldArray.fill(-Infinity);
   latestPeaks = [];
 });
 
-
-
-canvas.addEventListener('mousemove', (e)=>{
+// Canvas mousemove handler for tooltip
+canvas.addEventListener('mousemove', (e) => {
   const rect = canvas.getBoundingClientRect();
   const mx = e.clientX - rect.left;
   const my = e.clientY - rect.top;
@@ -626,30 +340,32 @@ canvas.addEventListener('mousemove', (e)=>{
   const freqMaxVal = parseFloat(freqMax.value);
   const dbMinVal = parseFloat(dbMin.value);
   const dbMaxVal = parseFloat(dbMax.value);
-  const nyquist = audioCtx ? audioCtx.sampleRate/2 : 22050;
-  const freq = (mx-32)/(width-64)*(freqMaxVal-freqMinVal)+freqMinVal;
-  const db = dbMaxVal - ((my-10)/(height-62))*(dbMaxVal-dbMinVal);
-  if(freq>=freqMinVal && freq<=freqMaxVal){
+  const nyquist = (audioHandler && audioHandler.audioCtx) ? audioHandler.audioCtx.sampleRate / 2 : 22050;
+  const freq = (mx - 32) / (width - 64) * (freqMaxVal - freqMinVal) + freqMinVal;
+  const db = dbMaxVal - ((my - 10) / (height - 62)) * (dbMaxVal - dbMinVal);
+  if (freq >= freqMinVal && freq <= freqMaxVal) {
     tooltip.style.display = "block";
-    tooltip.style.left = (e.pageX+10)+"px";
-    tooltip.style.top = (e.pageY+10)+"px";
-    tooltip.textContent = freq.toFixed(1)+" Hz, "+db.toFixed(1)+" dB";
+    tooltip.style.left = (e.pageX + 10) + "px";
+    tooltip.style.top = (e.pageY + 10) + "px";
+    tooltip.textContent = freq.toFixed(1) + " Hz, " + db.toFixed(1) + " dB";
   } else {
     tooltip.style.display = "none";
   }
 });
 
-document.getElementById('savePngBtn').onclick = ()=>{
+// Save PNG button
+document.getElementById('savePngBtn').onclick = () => {
   const link = document.createElement('a');
   link.download = 'spectrum.png';
   link.href = canvas.toDataURL();
   link.click();
 };
 
-document.getElementById('saveCsvBtn').onclick = ()=>{
+// Save CSV button
+document.getElementById('saveCsvBtn').onclick = () => {
   let csv = "freq_hz,db\n";
-  latestPeaks.forEach(p=>{
-    csv += p.freq.toFixed(2)+","+p.db.toFixed(2)+"\n";
+  latestPeaks.forEach(p => {
+    csv += p.freq.toFixed(2) + "," + p.db.toFixed(2) + "\n";
   });
   const blob = new Blob([csv], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
@@ -660,97 +376,388 @@ document.getElementById('saveCsvBtn').onclick = ()=>{
   URL.revokeObjectURL(url);
 };
 
-// Overlay functionality
+// Settings button
 const settingsBtn = document.getElementById('settingsBtn');
+settingsBtn.addEventListener('change', () => {
+  showModeIndicator = settingsBtn.checked;
+  updateModeIndicatorVisibility();
+  saveSettings();
+});
 
-// Audio file loading and playback functionality
-let audioBuffer = null;
-let playbackSource = null;
-let isPlaying = false;
+// Mode indicator toggle
+toggleModeIndicatorCheckbox.addEventListener('change', () => {
+  showModeIndicator = toggleModeIndicatorCheckbox.checked;
+  updateModeIndicatorVisibility();
+  saveSettings();
+});
 
-// File input change handler
-audioFileInput.onchange = async (event) => {
-  const file = event.target.files[0];
-  if (file) {
-    const arrayBuffer = await file.arrayBuffer();
+// Start button
+startBtn.onclick = async () => {
+  if (!audioHandler) {
+    console.error('Audio handler not initialized');
+    return;
+  }
 
-    // Create AudioContext if it doesn't exist
-    if (!audioCtx || audioCtx.state === 'closed') {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-
-    audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-
-    // Draw waveform visualization
-    drawWaveform(audioBuffer);
-
-    // Show playback bar with filename
-    fileName.textContent = file.name;
-    playbackBar.style.display = 'flex';
-
-    // Set total time immediately when file is loaded
-    const totalSeconds = audioBuffer.duration;
-    totalTime.textContent = formatTime(totalSeconds);
+  if (isPlaying) {
+    console.log('Stopping playback and switching to Live Mode');
+    isPlaying = false;
+    playBtn.style.display = 'inline-block';
+    pauseBtn.style.display = 'none';
+    progressFill.style.width = '0%';
     currentTime.textContent = '0:00';
+    totalTime.textContent = '0:00';
+    updateModeIndicator();
+  }
 
-    console.log('File loaded - Duration:', totalSeconds.toFixed(2), 'seconds');
+  if (!audioHandler.isRunning()) {
+    console.log('Starting Live Mode');
+    const deviceId = document.getElementById('deviceSelect').value;
+    const fftSize = parseInt(document.getElementById('fftSizeSelect').value);
 
-    // Keep main controls visible (don't hide start/record)
-    // playBtn.style.display = 'inline-block';
-    // pauseBtn.style.display = 'inline-block';
+    const success = await audioHandler.startLiveVisualization(deviceId, fftSize);
+    if (success) {
+      startBtn.title = "Stop Live Audio";
 
-    // Clear existing audio context for playback
-    if (running && source) {
-      running = false;
-      source.disconnect();
-      if (audioCtx) audioCtx.close();
+      const icon = startBtn.querySelector('.lucide-icon');
+      icon.setAttribute('data-lucide', 'mic-off');
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+
+      updateModeIndicator();
+
+      spectrumGraph.setAudioContext(audioHandler.audioCtx, audioHandler.analyser, audioHandler.dataArray, audioHandler.bufferLength, audioHandler.source, true);
+      spectrumGraph.draw();
+    } else {
+      console.error('Failed to start live visualization');
+      alert('Failed to start live audio. Please check your microphone permissions.');
+    }
+  } else {
+    console.log('Stopping Live Mode');
+    const success = await audioHandler.stopLiveVisualization();
+    if (success) {
+      startBtn.title = "Start Live Audio";
+
+      const icon = startBtn.querySelector('.lucide-icon');
+      icon.setAttribute('data-lucide', 'mic');
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+
+      updateModeIndicator();
+    } else {
+      console.error('Failed to stop live visualization');
     }
   }
 };
 
-// Clear button to hide playback bar and clear loaded file
+// Record button
+let isProcessingRecording = false;
+recordBtn.onclick = async () => {
+  if (!audioHandler) {
+    console.error('Audio handler not initialized');
+    return;
+  }
+
+  if (isProcessingRecording) {
+    console.log('Recording operation already in progress, ignoring click');
+    return;
+  }
+
+  isProcessingRecording = true;
+
+  try {
+    if (!audioHandler.isRecording()) {
+      console.log('Starting recording...');
+
+      settingsBtn.disabled = true;
+      settingsBtn.style.opacity = '0.5';
+      settingsBtn.style.cursor = 'not-allowed';
+      document.getElementById('fftSizeSelect').disabled = true;
+      document.getElementById('fftSizeSelect').style.opacity = '0.5';
+      startBtn.disabled = true;
+      startBtn.style.opacity = '0.5';
+      startBtn.style.cursor = 'not-allowed';
+      recordBtn.disabled = true;
+      recordBtn.style.opacity = '0.5';
+      console.log('🔒 Settings and live mic controls disabled during recording');
+
+      if (!audioHandler.isRunning()) {
+        const deviceId = document.getElementById('deviceSelect').value;
+        const fftSize = parseInt(document.getElementById('fftSizeSelect').value);
+        const success = await audioHandler.startLiveVisualization(deviceId, fftSize);
+        if (!success) {
+          console.error('Failed to start live mode for recording');
+          alert('Failed to start recording. Please check your microphone permissions.');
+          settingsBtn.disabled = false;
+          settingsBtn.style.opacity = '1';
+          settingsBtn.style.cursor = 'pointer';
+          document.getElementById('fftSizeSelect').disabled = false;
+          document.getElementById('fftSizeSelect').style.opacity = '1';
+          startBtn.disabled = false;
+          startBtn.style.opacity = '1';
+          startBtn.style.cursor = 'pointer';
+          recordBtn.disabled = false;
+          recordBtn.style.opacity = '1';
+          isProcessingRecording = false;
+          return;
+        }
+      }
+
+      const success = await audioHandler.startRecording();
+      if (success) {
+        recordBtn.title = 'Stop Recording';
+        recordBtn.style.background = '#17a2b8';
+        recordBtn.disabled = false;
+        recordBtn.style.opacity = '1';
+
+        const icon = recordBtn.querySelector('.lucide-icon');
+        icon.classList.add('recording-spin');
+
+        updateModeIndicator();
+
+        if (spectrumGraph && audioHandler.audioCtx) {
+          spectrumGraph.setAudioContext(
+            audioHandler.audioCtx,
+            audioHandler.analyser,
+            audioHandler.dataArray,
+            audioHandler.bufferLength,
+            audioHandler.source,
+            true
+          );
+          spectrumGraph.draw();
+        }
+      } else {
+        console.error('Failed to start recording');
+        alert('Failed to start recording. Please try again.');
+        settingsBtn.disabled = false;
+        settingsBtn.style.opacity = '1';
+        settingsBtn.style.cursor = 'pointer';
+        document.getElementById('fftSizeSelect').disabled = false;
+        document.getElementById('fftSizeSelect').style.opacity = '1';
+        startBtn.disabled = false;
+        startBtn.style.opacity = '1';
+        startBtn.style.cursor = 'pointer';
+        recordBtn.disabled = false;
+        recordBtn.style.opacity = '1';
+      }
+    } else {
+      console.log('Stopping recording...');
+
+      recordBtn.disabled = true;
+      recordBtn.style.opacity = '0.5';
+
+      const recordingBlob = await audioHandler.stopRecording();
+      if (recordingBlob) {
+        console.log('Recording completed successfully, blob size:', recordingBlob.size);
+
+        // Store the blob for download conversion
+        recordedBlob = recordingBlob;
+        recordedWavUrl = URL.createObjectURL(recordingBlob);
+
+        try {
+          // Decode WebM blob for playback
+          const tempAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          const arrayBuffer = await recordingBlob.arrayBuffer();
+          audioBuffer = await tempAudioCtx.decodeAudioData(arrayBuffer);
+
+          // Update UI with decoded audio info
+          fileName.textContent = 'recorded_audio.wav';
+          playbackBar.style.display = 'flex';
+          const totalSeconds = audioBuffer.duration;
+          totalTime.textContent = formatTime(totalSeconds);
+          currentTime.textContent = '0:00';
+
+          // Draw waveform
+          drawWaveform(audioBuffer);
+
+          console.log('✅ WebM decoded for playback, duration:', totalSeconds.toFixed(2), 'seconds');
+
+          // Clean up temporary context
+          await tempAudioCtx.close();
+        } catch (decodeError) {
+          console.error('Failed to decode WebM for playback:', decodeError);
+          // Fallback: show WebM info without playback capability
+          fileName.textContent = 'recorded_audio.webm';
+          playbackBar.style.display = 'flex';
+          totalTime.textContent = 'Unknown';
+          currentTime.textContent = '0:00';
+          audioBuffer = null;
+          console.log('⚠️ WebM decoding failed, playback not available');
+        }
+
+        if (audioHandler.isRunning()) {
+          await audioHandler.stopLiveVisualization();
+          startBtn.title = "Start Live Audio";
+          console.log('Stopped live mode - switching to Playback Ready mode');
+        }
+
+        updateModeIndicator();
+      } else {
+        console.error('Recording failed or was cancelled');
+        alert('Recording failed. Please try again.');
+      }
+
+      recordBtn.title = 'Start Recording';
+      recordBtn.style.background = '#dc3545';
+      recordBtn.disabled = false;
+      recordBtn.style.opacity = '1';
+
+      const icon = recordBtn.querySelector('.lucide-icon');
+      icon.classList.remove('recording-spin');
+
+      updateModeIndicator();
+
+      settingsBtn.disabled = false;
+      settingsBtn.style.opacity = '1';
+      settingsBtn.style.cursor = 'pointer';
+      document.getElementById('fftSizeSelect').disabled = false;
+      document.getElementById('fftSizeSelect').style.opacity = '1';
+      startBtn.disabled = false;
+      startBtn.style.opacity = '1';
+      startBtn.style.cursor = 'pointer';
+      console.log('🔓 Settings and live mic controls re-enabled after recording');
+    }
+  } finally {
+    isProcessingRecording = false;
+  }
+};
+
+// File input handler
+audioFileInput.onchange = async (event) => {
+  const file = event.target.files[0];
+  if (file) {
+    console.log('📁 Loading file:', file.name, 'Type:', file.type, 'Size:', file.size);
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      console.log('📊 Array buffer size:', arrayBuffer.byteLength);
+
+      let tempAudioCtx;
+      if (!audioHandler || !audioHandler.audioCtx || audioHandler.audioCtx.state === 'closed') {
+        tempAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        console.log('🎵 Created new AudioContext for decoding');
+      } else {
+        tempAudioCtx = audioHandler.audioCtx;
+        console.log('🎵 Using existing AudioContext for decoding');
+      }
+
+      // Resume AudioContext if suspended (fixes file upload issue)
+      if (tempAudioCtx.state === 'suspended') {
+        await tempAudioCtx.resume();
+        console.log('AudioContext resumed for file decoding');
+      }
+
+      console.log('🔄 Starting decodeAudioData...');
+      audioBuffer = await tempAudioCtx.decodeAudioData(arrayBuffer);
+      console.log('✅ decodeAudioData successful:', {
+        duration: audioBuffer.duration,
+        sampleRate: audioBuffer.sampleRate,
+        numberOfChannels: audioBuffer.numberOfChannels,
+        length: audioBuffer.length
+      });
+
+      drawWaveform(audioBuffer);
+
+      fileName.textContent = file.name;
+      playbackBar.style.display = 'flex';
+
+      const totalSeconds = audioBuffer.duration;
+      totalTime.textContent = formatTime(totalSeconds);
+      currentTime.textContent = '0:00';
+
+      console.log('File loaded - Duration:', totalSeconds.toFixed(2), 'seconds');
+
+      if (audioHandler && audioHandler.isRunning()) {
+        await audioHandler.stopLiveVisualization();
+        startBtn.title = "Start Live Audio";
+        console.log('Stopped live mode for file playback');
+      }
+
+      updateModeIndicator();
+    } catch (error) {
+      console.error('❌ Error loading audio file:', error);
+      console.error('Error details:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      });
+      alert('Error loading audio file: ' + error.message);
+    }
+  }
+};
+
+// Clear button
 clearBtn.onclick = () => {
   audioBuffer = null;
   playbackSource = null;
   isPlaying = false;
 
-  if (running && playbackSource) {
-    playbackSource.stop();
-    playbackSource.disconnect();
-    analyser.disconnect();
-    audioCtx.close();
-    running = false;
+  if (playbackSource) {
+    try {
+      playbackSource.stop();
+      playbackSource.disconnect();
+      playbackSource = null;
+    } catch (error) {
+      console.error('Error stopping playback source:', error);
+    }
   }
 
   playbackBar.style.display = 'none';
   fileName.textContent = '_';
   const playbackLine = document.getElementById('playbackLine');
   if (playbackLine) {
-    playbackLine.style.left = '10px'; // Reset to canvas left edge
+    playbackLine.style.left = '10px';
   }
   currentTime.textContent = '0:00';
   totalTime.textContent = '0:00';
 
-  // Show main controls again
-  startBtn.style.display = 'inline-block';
-  recordBtn.style.display = 'inline-block';
-
-  // Redraw static visualization
   spectrumGraph.drawStatic();
-  resetAudioLevel();
   updateModeIndicator();
 };
 
-// Download button functionality
-downloadBtn.onclick = () => {
+// Download button
+downloadBtn.onclick = async () => {
   let blobToDownload = null;
   let filename = fileName.textContent;
 
-  // Use MediaRecorder blob if available, otherwise use AudioBuffer
-  if (recordedBlob && recordedWavUrl) {
-    blobToDownload = recordedBlob;
-    console.log('Downloading MediaRecorder blob:', blobToDownload.size, 'bytes');
+  if (recordedBlob) {
+    try {
+      console.log('Converting WebM to WAV for download...');
+
+      // Create a temporary audio context for decoding
+      const tempAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+      // Convert blob to array buffer
+      const arrayBuffer = await recordedBlob.arrayBuffer();
+
+      // Decode the WebM audio
+      const audioBuffer = await tempAudioCtx.decodeAudioData(arrayBuffer);
+      console.log('🎵 Decoded audio buffer:', {
+        duration: audioBuffer.duration,
+        sampleRate: audioBuffer.sampleRate,
+        numberOfChannels: audioBuffer.numberOfChannels,
+        length: audioBuffer.length
+      });
+
+      // Convert to WAV - ensure we use the correct channel data
+      const channelData = audioBuffer.numberOfChannels > 0 ? audioBuffer.getChannelData(0) : new Float32Array(0);
+      console.log('📊 Channel data length:', channelData.length);
+
+      const wavArrayBuffer = createWAVFile(channelData, audioBuffer.sampleRate, 1);
+      console.log('📄 Created WAV array buffer, size:', wavArrayBuffer.byteLength);
+
+      blobToDownload = new Blob([wavArrayBuffer], { type: 'audio/wav' });
+      filename = 'recorded_audio.wav';
+
+      // Clean up
+      await tempAudioCtx.close();
+
+      console.log('✅ Successfully converted WebM to WAV, final blob size:', blobToDownload.size);
+    } catch (error) {
+      console.error('Error converting WebM to WAV:', error);
+      // Fallback to original WebM format
+      blobToDownload = recordedBlob;
+      filename = 'recorded_audio.webm';
+      console.log('⚠️ Using WebM format as fallback');
+    }
   } else if (audioBuffer) {
+    // Create WAV from audio buffer if needed
     const arrayBuffer = createWAVFile(audioBuffer.getChannelData(0), audioBuffer.sampleRate, 1);
     blobToDownload = new Blob([arrayBuffer], { type: 'audio/wav' });
     filename = filename || 'audio.wav';
@@ -772,118 +779,123 @@ downloadBtn.onclick = () => {
   console.log('✅ File downloaded:', filename);
 };
 
-// Play button functionality
+// Play button
 playBtn.onclick = () => {
   if (!audioBuffer) return;
 
   console.log('Playback started for audio buffer:', audioBuffer.duration, 'seconds');
 
-  // Create new audio context if needed
-  if (!audioCtx || audioCtx.state === 'closed') {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  let tempAudioCtx;
+  if (!audioHandler || !audioHandler.audioCtx || audioHandler.audioCtx.state === 'closed') {
+    tempAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  } else {
+    tempAudioCtx = audioHandler.audioCtx;
   }
 
-  // Resume context if suspended (requires user gesture)
-  if (audioCtx.state === 'suspended') {
-    audioCtx.resume().then(() => {
+  if (tempAudioCtx.state === 'suspended') {
+    tempAudioCtx.resume().then(() => {
       console.log('Audio context resumed');
-      playAudioBuffer();
+      playAudioBuffer(tempAudioCtx);
     }).catch(error => {
       console.error('Failed to resume audio context:', error);
+      alert('Failed to start playback. Please try again.');
     });
   } else {
-    playAudioBuffer();
+    playAudioBuffer(tempAudioCtx);
   }
 
-  function playAudioBuffer() {
-    console.log('Setting up playback...');
+  function playAudioBuffer(audioCtx) {
+    try {
+      console.log('Setting up playback...');
 
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = parseInt(fftSizeSelect.value);
-    analyser.smoothingTimeConstant = 0.0;
-    bufferLength = analyser.frequencyBinCount;
-    dataArray = new Float32Array(bufferLength);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = parseInt(document.getElementById('fftSizeSelect').value);
+      analyser.smoothingTimeConstant = 0.0;
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Float32Array(bufferLength);
 
-    // Create playback source
-    if (playbackSource) {
-      playbackSource.stop();
-      playbackSource.disconnect();
-    }
-    playbackSource = audioCtx.createBufferSource();
-    playbackSource.buffer = audioBuffer;
-    playbackSource.connect(analyser);
-    analyser.connect(audioCtx.destination);
-
-    // Update total time display
-    const totalSeconds = audioBuffer.duration;
-    totalTime.textContent = formatTime(totalSeconds);
-    currentTime.textContent = '0:00';
-
-    // Progress tracking during playback
-    let startTime = audioCtx.currentTime;
-    const playbackLine = document.getElementById('playbackLine');
-
-    function updateProgress() {
-      if (isPlaying && playbackSource) {
-        const currentProgress = audioCtx.currentTime - startTime;
-        const progressPercent = (currentProgress / totalSeconds) * 100;
-        // Position line from 10px (canvas left edge) to calc(100% - 12px) (canvas right edge, accounting for 2px line width)
-        const leftPosition = Math.min(progressPercent, 100);
-        playbackLine.style.left = `calc(10px + ${leftPosition}% - 2px)`;
-        currentTime.textContent = formatTime(currentProgress);
+      if (playbackSource) {
+        try {
+          playbackSource.stop();
+          playbackSource.disconnect();
+        } catch (error) {
+          console.error('Error stopping previous playback source:', error);
+        }
       }
-      if (isPlaying) {
-        requestAnimationFrame(updateProgress);
-      }
-    }
+      playbackSource = audioCtx.createBufferSource();
+      playbackSource.buffer = audioBuffer;
+      playbackSource.connect(analyser);
+      analyser.connect(audioCtx.destination);
 
-    // Handle playback end
-    playbackSource.onended = () => {
-      isPlaying = false;
-      playBtn.style.display = 'inline-block';
-      pauseBtn.style.display = 'none';
-      playbackLine.style.left = 'calc(100% - 12px)'; // Align with canvas right edge, accounting for 2px line width
-      currentTime.textContent = totalTime.textContent;
-      resetAudioLevel();
+      const totalSeconds = audioBuffer.duration;
+      totalTime.textContent = formatTime(totalSeconds);
+      currentTime.textContent = '0:00';
+
+      const playbackLine = document.getElementById('playbackLine');
+
+      function updateProgress() {
+        if (isPlaying && playbackSource) {
+          const currentProgress = audioCtx.currentTime - startTime;
+          const progressPercent = (currentProgress / totalSeconds) * 100;
+          const leftPosition = Math.min(progressPercent, 100);
+          playbackLine.style.left = `calc(10px + ${leftPosition}% - 2px)`;
+          currentTime.textContent = formatTime(currentProgress);
+        }
+        if (isPlaying) {
+          requestAnimationFrame(updateProgress);
+        }
+      }
+
+      playbackSource.onended = () => {
+        isPlaying = false;
+        playBtn.style.display = 'inline-block';
+        pauseBtn.style.display = 'none';
+        playbackLine.style.left = 'calc(100% - 12px)';
+        currentTime.textContent = totalTime.textContent;
+        updateModeIndicator();
+      };
+
+      let startTime = audioCtx.currentTime;
+      playbackLine.style.left = '10px';
+
+      playbackSource.start();
+      isPlaying = true;
       updateModeIndicator();
-    };
 
-    // Reset start time and playback line to start position before starting playback
-    startTime = audioCtx.currentTime;
-    playbackLine.style.left = '10px';
+      if (audioHandler && audioHandler.peakHoldArray) {
+        audioHandler.peakHoldArray.fill(-Infinity);
+      }
 
-    playbackSource.start();
-    isPlaying = true;
-    updateModeIndicator();
+      spectrumGraph.setAudioContext(audioCtx, analyser, dataArray, bufferLength, playbackSource, false);
+      spectrumGraph.drawPlayback();
 
-    // Reset peak hold for playback
-    peakHoldArray = new Float32Array(bufferLength).fill(-Infinity);
+      updateProgress();
 
-    // Set audio context in spectrum graph for playback mode
-    spectrumGraph.setAudioContext(audioCtx, analyser, dataArray, bufferLength, playbackSource, false);
-    spectrumGraph.drawPlayback();
-    
-    updateProgress();
-
-    playBtn.style.display = 'none';
-    pauseBtn.style.display = 'inline-block';
+      playBtn.style.display = 'none';
+      pauseBtn.style.display = 'inline-block';
+    } catch (error) {
+      console.error('Error setting up playback:', error);
+      alert('Failed to start playback. Please try again.');
+    }
   }
 };
 
-// Pause button functionality
+// Pause button
 pauseBtn.onclick = () => {
   if (isPlaying) {
-    // Stop the current playback source
     if (playbackSource) {
-      playbackSource.stop();
-      playbackSource.disconnect();
-      playbackSource = null;
+      try {
+        playbackSource.stop();
+        playbackSource.disconnect();
+        playbackSource = null;
+      } catch (error) {
+        console.error('Error stopping playback source:', error);
+      }
     }
     isPlaying = false;
     playBtn.style.display = 'inline-block';
     pauseBtn.style.display = 'none';
 
-    // Reset playback line to start position
     const playbackLine = document.getElementById('playbackLine');
     if (playbackLine) {
       playbackLine.style.left = '10px';
@@ -893,346 +905,95 @@ pauseBtn.onclick = () => {
   }
 };
 
-// WAV Recording functionality
-let recording = false;
-let recordedSamples = [];
-
-function createWAVFile(audioData, sampleRate, numChannels = 1) {
-  const length = audioData.length;
-  const dataSize = length * numChannels * 2;
-  const arrayBuffer = new ArrayBuffer(44 + dataSize);
-  const view = new DataView(arrayBuffer);
-
-  // RIFF chunk descriptor
-  view.setUint32(0, 0x52494646, false); // "RIFF"
-  view.setUint32(4, 36 + dataSize, true); // chunk size
-  view.setUint32(8, 0x57415645, false); // "WAVE"
-
-  // fmt sub-chunk
-  view.setUint32(12, 0x666d7420, false); // "fmt "
-  view.setUint32(16, 16, true); // sub-chunk size (PCM = 16)
-  view.setUint16(20, 1, true); // audio format (PCM = 1)
-  view.setUint16(22, numChannels, true); // number of channels
-  view.setUint32(24, sampleRate, true); // sample rate
-  view.setUint32(28, sampleRate * numChannels * 2, true); // byte rate
-  view.setUint16(32, numChannels * 2, true); // block align
-  view.setUint16(34, 16, true); // bits per sample (16-bit)
-
-  // data sub-chunk
-  view.setUint32(36, 0x64617461, false); // "data"
-  view.setUint32(40, dataSize, true); // data size
-
-  // Convert Float32Array to Int16Array and write data
-  const channels = [audioData];
-  for (let i = 0; i < length; i++) {
-    for (let channel = 0; channel < numChannels; channel++) {
-      // Convert float (-1.0 to 1.0) to 16-bit PCM
-      const sample = Math.max(-1, Math.min(1, channels[channel][i]));
-      const pcmSample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
-      view.setInt16(44 + (i * numChannels + channel) * 2, pcmSample, true);
-    }
-  }
-
-  return arrayBuffer;
-}
-
-let activeRecorder = null;
-
-function startWAVRecording() {
-  console.log('🎙️ Starting WAV recording');
-
-  if (!mediaRecorder) {
-    console.error('MediaRecorder not ready - please restart live mode');
-    recording = false;
-    recordBtn.textContent = 'Record';
-    recordBtn.style.background = '#dc3545';
-    updateModeIndicator();
-    return;
-  }
-
-  // Clear previous recording data
-  recordedChunks = [];
-  recordedBlob = null;
-  recording = true;
-
-  // Start MediaRecorder
-  mediaRecorder.start();
-  console.log('🎵 MediaRecorder started - recording audio');
-}
-
-const stopWAVRecordingGracefully = () => {
-  console.log('🎙️ PHASE 1: Stopping MediaRecorder recording...');
-  recording = false;
-
-  if (mediaRecorder && mediaRecorder.state === 'recording') {
-    mediaRecorder.stop();
-    console.log('MediaRecorder stop requested');
-  } else {
-    console.error('No active MediaRecorder to stop');
-    return;
-  }
-
-  // Handle recording completion with MediaRecorder
-  mediaRecorder.onstop = (event) => {
-    console.log('🎙️ PHASE 2: MediaRecorder stopped');
-    console.log('📊 Recorded chunks:', recordedChunks.length);
-
-    if (recordedChunks.length === 0) {
-      console.error('⚠️ No audio chunks recorded');
-      alert('Recording failed - no audio captured');
-      return;
-    }
-
-    // Create the final blob (WAV format)
-    const mimeType = recordedChunks[0].type || 'audio/wav';
-    recordedBlob = new Blob(recordedChunks, { type: mimeType });
-    console.log('🎙️ PHASE 3: Created', mimeType, 'blob of size', recordedBlob.size, 'bytes');
-
-    // Convert to WAV and set up playback
-    createPlaybackBufferFromBlob(recordedBlob);
-
-    // Clean up chunks
-    recordedChunks = []; // ✅ Clean up chunks
-    console.log('🎙️ PHASE 4: Recording COMPLETE - audio ready for playback/download');
-  };
-};
-
-// 🚀 FALLBACK RECORDING: ScriptProcessor-based recording (proven working system)
-function startScriptProcessorRecording() {
-  console.log('🎙️ SCRIPT PROCESSOR FALLBACK: Starting ScriptProcessor recording...');
-  console.log('Current recorded samples count:', recordedSamples.length);
-
-  // Clear any previous recording from MediaRecorder
-  recordedSamples = [];
-
-  console.log('💡 Using proven ScriptProcessor system for immediate recording.');
-  console.log('🔊 Keep talking - ScriptProcessor will capture your audio perfectly!');
-}
-
-function stopScriptProcessorRecordingGracefully() {
-  console.log('🎵 SCRIPT PROCESSOR: Stopping ScriptProcessor recording...');
-  recording = false;
-
-  // Wait briefly for any final buffers to process
-  setTimeout(() => {
-    console.log('📊 Processing recordingsSamples from ScriptProcessor...');
-    const totalSamples = recordedSamples.reduce((sum, chunk) => sum + chunk.length, 0);
-    console.log('🎙️ Total samples collected:', totalSamples);
-
-    if (totalSamples === 0) {
-      console.error('⚠️ No ScriptProcessor samples recorded');
-      alert('Recording failed - no audio captured');
-      recordedSamples = []; // Clean up
-      return;
-    }
-
-    console.log('✅ Finalizing ScriptProcessor recording...');
-
-    // ✅ Flatten the recorded samples (we know this works!)
-    const flatSamples = new Float32Array(totalSamples);
-    let offset = 0;
-    for (let i = 0; i < recordedSamples.length; i++) {
-      const chunk = recordedSamples[i];
-      flatSamples.set(chunk, offset);
-      offset += chunk.length;
-    }
-
-    // ✅ Debug RMS of final flat samples
-    let totalRmsSum = 0;
-    for (let i = 0; i < Math.min(10000, flatSamples.length); i++) {
-      totalRmsSum += flatSamples[i] * flatSamples[i];
-    }
-    const totalRms = Math.sqrt(totalRmsSum / Math.min(10000, flatSamples.length));
-    console.log('🎤 SCRIPT PROCESSOR RMS:', totalRms.toFixed(6), '- should be same as live audio!');
-
-    // ✅ Use the original audio context for creation (we know this sample rate works!)
-    const audioBufferFromRecording = audioCtx.createBuffer(1, totalSamples, audioCtx.sampleRate);
-    audioBufferFromRecording.getChannelData(0).set(flatSamples);
-
-    console.log('🎙️ Created AudioBuffer from ScriptProcessor data');
-    console.log('📊 Buffer duration:', (totalSamples / audioCtx.sampleRate).toFixed(2), 'seconds');
-
-    // ✅ Set up playback
-    audioBuffer = audioBufferFromRecording;
-    fileName.textContent = 'recorded_audio.wav';
-    playbackBar.style.display = 'flex';
-
-    // Clean up recorded samples
-    recordedSamples = [];
-    console.log('🎙️ SCRIPT PROCESSOR RECORDING COMPLETE - ready for playback/download');
-  }, 200); // Brief wait for any final ScriptProcessor buffers
-};
-
-// Helper function to convert MediaRecorder Blob to audio buffer for playback
-function createPlaybackBufferFromBlob(blob) {
-  const fileReader = new FileReader();
-  fileReader.onload = (event) => {
-    const arrayBuffer = event.target.result;
-
-    // For playback, we need to use Web Audio API
-    if (!audioCtx || audioCtx.state === 'closed') {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-
-    audioCtx.decodeAudioData(arrayBuffer).then((decodedBuffer) => {
-      audioBuffer = decodedBuffer;
-      fileName.textContent = 'recorded_audio.wav';
-      playbackBar.style.display = 'flex';
-
-      // Draw waveform visualization
-      drawWaveform(decodedBuffer);
-
-      // Update duration display
-      const duration = decodedBuffer.duration;
-      totalTime.textContent = formatTime(duration);
-      currentTime.textContent = '0:00';
-
-      console.log('🎙️ PHASE 3A: Created playback buffer - Duration:', duration.toFixed(2), 'seconds');
-
-      // Create download URL
-      const url = URL.createObjectURL(blob);
-      recordedWavUrl = url;
-
-      // Stop live mode since we now have recorded audio ready for playback
-      if (running) {
-        running = false;
-        if (audioCtx && audioCtx.state !== 'closed') {
-          audioCtx.close();
-        }
-        startBtn.title = "Start Live Audio";
-        console.log('Stopped live mode - switching to Playback Ready mode');
-      }
-
-      // Update mode indicator now that we have recorded audio ready
-      updateModeIndicator();
-
-      console.log('Recording loaded into playback bar - ready to play manually');
-
-    }).catch((error) => {
-      console.error('Failed to decode recorded audio for playback:', error);
-      alert('Recording completed but playback setup failed - you can still download the file');
-    });
-  };
-  fileReader.readAsArrayBuffer(blob);
-}
-
-
-
-// Recording button functionality
-recordBtn.onclick = () => {
-  if (!recording) {
-    recording = true; // ⚡ SET FLAG FIRST - BEFORE starting any recording logic
-    recordBtn.title = 'Stop Recording';
-    recordBtn.style.background = '#17a2b8'; // Change to blue while recording
-
-    // Add spinning animation to radius icon
-    const icon = recordBtn.querySelector('.lucide-icon');
-    icon.classList.add('recording-spin');
-
-    updateModeIndicator();
-
-    // 🔒 DISABLE CONTROLS during recording to prevent disruptions
-    settingsBtn.disabled = true;
-    settingsBtn.style.opacity = '0.5';
-    settingsBtn.style.cursor = 'not-allowed';
-    fftSizeSelect.disabled = true;
-    fftSizeSelect.style.opacity = '0.5';
-    startBtn.disabled = true;
-    startBtn.style.opacity = '0.5';
-    startBtn.style.cursor = 'not-allowed';
-    console.log('🔒 Settings and live mic controls disabled during recording');
-
-    // Auto-start live mode if not already running
-    if (!running) {
-      startLiveVisualization().then(() => {
-        startWAVRecording();
-      });
-    } else {
-      // Keep live mode running but update button state to show mic is available
-      startBtn.title = "Start Live Audio";
-
-      // Change icon to mic (indicating live mode is still running but mic is conceptually "available")
-      const micIcon = startBtn.querySelector('.lucide-icon');
-      micIcon.setAttribute('data-lucide', 'mic');
-      lucide.createIcons();
-
-      startWAVRecording();
-    }
-  } else {
-    // Stop recorder with graceful termination
-    stopWAVRecordingGracefully();
-    recording = false;
-    recordBtn.title = 'Start Recording';
-    recordBtn.style.background = '#dc3545'; // Back to red
-
-    // Remove spinning animation from radius icon
-    const icon = recordBtn.querySelector('.lucide-icon');
-    icon.classList.remove('recording-spin');
-
-    updateModeIndicator();
-
-    // 🔓 RE-ENABLE CONTROLS
-    settingsBtn.disabled = false;
-    settingsBtn.style.opacity = '1';
-    settingsBtn.style.cursor = 'pointer';
-    fftSizeSelect.disabled = false;
-    fftSizeSelect.style.opacity = '1';
-    startBtn.disabled = false;
-    startBtn.style.opacity = '1';
-    startBtn.style.cursor = 'pointer';
-    console.log('🔓 Settings and live mic controls re-enabled after recording');
-  }
-};
-
-function formatTime(seconds) {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
-
-function startLiveMode() {
-  console.log('🎵 Live mode started - ready for recording');
-  // MediaRecorder setup happens in startBtn onclick
-  return Promise.resolve();
-}
-
-// Upload button functionality
-document.getElementById('loadBtn').addEventListener('click', () => {
-  document.getElementById('audioFileInput').click();
-});
-
-// Share dropdown functionality
-const shareBtn = document.getElementById('shareBtn');
-const shareDropdown = document.getElementById('shareDropdown');
-const shareDropdownContainer = document.querySelector('.share-dropdown');
-
-shareBtn.addEventListener('click', (e) => {
-  e.stopPropagation();
-  shareDropdownContainer.classList.toggle('active');
-});
-
-// Close dropdown when clicking outside
-document.addEventListener('click', (e) => {
-  if (!shareDropdownContainer.contains(e.target)) {
-    shareDropdownContainer.classList.remove('active');
-  }
+// Load button
+loadBtn.addEventListener('click', () => {
+  audioFileInput.click();
 });
 
 // Overlay functionality
 const overlay = document.querySelector('.overlay');
+const closeBtn = document.querySelector('.close-btn');
 
-settingsBtn.addEventListener('click', () => {
-  overlay.classList.add('active');
-});
+if (settingsBtn) {
+  settingsBtn.addEventListener('click', () => {
+    overlay.classList.add('active');
+  });
+}
 
-document.querySelector('.close-btn').addEventListener('click', () => {
-  overlay.classList.remove('active');
-  spectrumGraph.drawStatic();
-});
-
-overlay.addEventListener('click', (e) => {
-  if (e.target === overlay) {
+if (closeBtn) {
+  closeBtn.addEventListener('click', () => {
     overlay.classList.remove('active');
     spectrumGraph.drawStatic();
+  });
+}
+
+if (overlay) {
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) {
+      overlay.classList.remove('active');
+      spectrumGraph.drawStatic();
+    }
+  });
+}
+
+// Utility functions
+function createWAVFile(audioData, sampleRate, numChannels = 1) {
+  console.log('🎵 Creating WAV file:', {
+    dataLength: audioData.length,
+    sampleRate: sampleRate,
+    numChannels: numChannels
+  });
+
+  const length = audioData.length;
+  const bytesPerSample = 2; // 16-bit
+  const dataSize = length * numChannels * bytesPerSample;
+  const bufferSize = 44 + dataSize; // WAV header (44 bytes) + data
+
+  console.log('📊 WAV calculations:', {
+    length: length,
+    bytesPerSample: bytesPerSample,
+    dataSize: dataSize,
+    bufferSize: bufferSize
+  });
+
+  const arrayBuffer = new ArrayBuffer(bufferSize);
+  const view = new DataView(arrayBuffer);
+
+  // RIFF chunk descriptor
+  view.setUint32(0, 0x52494646, false); // "RIFF"
+  view.setUint32(4, 36 + dataSize, true); // RIFF chunk size (file size - 8)
+  view.setUint32(8, 0x57415645, false); // "WAVE"
+
+  // Format chunk
+  view.setUint32(12, 0x666d7420, false); // "fmt "
+  view.setUint32(16, 16, true); // Format chunk size (16 for PCM)
+  view.setUint16(20, 1, true); // Audio format (1 = PCM)
+  view.setUint16(22, numChannels, true); // Number of channels
+  view.setUint32(24, sampleRate, true); // Sample rate
+  view.setUint32(28, sampleRate * numChannels * bytesPerSample, true); // Byte rate
+  view.setUint16(32, numChannels * bytesPerSample, true); // Block align
+  view.setUint16(34, 16, true); // Bits per sample
+
+  // Data chunk
+  view.setUint32(36, 0x64617461, false); // "data"
+  view.setUint32(40, dataSize, true); // Data chunk size
+
+  console.log('📝 WAV header written');
+
+  // Write audio data
+  let offset = 44; // Start after header
+  for (let i = 0; i < length; i++) {
+    // Clamp sample to [-1, 1] range
+    const sample = Math.max(-1, Math.min(1, audioData[i]));
+
+    // Convert to 16-bit PCM
+    const pcmSample = sample < 0 ? Math.floor(sample * 0x8000) : Math.floor(sample * 0x7FFF);
+
+    // Write as little-endian 16-bit integer
+    view.setInt16(offset, pcmSample, true);
+    offset += 2;
   }
-});
+
+  console.log('✅ WAV data written, total size:', arrayBuffer.byteLength);
+  return arrayBuffer;
+}
