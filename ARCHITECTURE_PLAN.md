@@ -1,4 +1,4 @@
-# Spectrum Analyzer Rearchitecture Plan
+# Freq-Peak Rearchitecture Plan
 
 ## Executive Summary
 

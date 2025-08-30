@@ -2,12 +2,66 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Spectrum Analyzer</title>
+  <title>Freq Peak</title>
+  <meta name="description" content="Professional real-time audio spectrum analyzer with live visualization, recording capabilities, and advanced audio analysis tools. Perfect for audio engineers, musicians, and sound enthusiasts.">
+  <meta name="keywords" content="audio spectrum analyzer, frequency analyzer, audio visualization, real-time audio, spectrum analysis, audio recording, FFT analyzer, sound analysis">
+  <meta name="author" content="Eli Byers">
+  <meta name="robots" content="index, follow">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://freqpeak.com/">
+  <meta property="og:title" content="Freq-Peak - Real-Time Audio Spectrum Analyzer">
+  <meta property="og:description" content="Professional real-time audio spectrum analyzer with live visualization, recording capabilities, and advanced audio analysis tools.">
+  <meta property="og:image" content="https://freqpeak.com/favicon/android-chrome-512x512.png">
+
+  <!-- Twitter -->
+  <meta property="twitter:card" content="summary_large_image">
+  <meta property="twitter:url" content="https://freqpeak.com/">
+  <meta property="twitter:title" content="Freq-Peak - Real-Time Audio Spectrum Analyzer">
+  <meta property="twitter:description" content="Professional real-time audio spectrum analyzer with live visualization, recording capabilities, and advanced audio analysis tools.">
+  <meta property="twitter:image" content="https://freqpeak.com/favicon/android-chrome-512x512.png">
+
+  <!-- Canonical URL -->
+  <link rel="canonical" href="https://freqpeak.com/">
+
+  <!-- Favicon -->
   <link rel="icon" type="image/x-icon" href="favicon/favicon.ico">
   <link rel="icon" type="image/png" sizes="32x32" href="favicon/favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="favicon/favicon-16x16.png">
   <link rel="apple-touch-icon" href="favicon/apple-touch-icon.png">
   <link rel="manifest" href="favicon/site.webmanifest">
+
+  <!-- Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "Freq-Peak",
+    "description": "Real-time audio spectrum analyzer with live visualization, recording capabilities, and advanced audio analysis tools",
+    "url": "https://freqpeak.com/",
+    "applicationCategory": "AudioApplication",
+    "operatingSystem": "Web Browser",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "featureList": [
+      "Real-time spectrum analysis",
+      "Audio recording and playback",
+      "Peak detection and hold",
+      "Configurable FFT sizes",
+      "Multiple audio formats support"
+    ],
+    "author": {
+      "@type": "Person",
+      "name": "Eli Byers"
+    }
+  }
+  </script>
+
   <link rel="stylesheet" href="style.css">
   <!-- Lucide Icons CDN -->
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
@@ -15,8 +69,8 @@
 <body>
   <div class="header">
     <div class="title-container">
-      <img src="favicon/android-chrome-192x192.png" alt="Spectrum Analyzer Logo" class="title-logo">
-      <h1>Spectrum Analyzer</h1>
+      <img src="favicon/android-chrome-192x192.png" alt="Freq-Peak Logo" class="title-logo">
+      <h1>Freq Peak</h1>
     </div>
     <div class="controls-container">
       <label>Input: <select id="deviceSelect" style="background: #444; color: #fff; padding: 5px; border: none; border-radius: 4px;"></select></label>

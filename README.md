@@ -1,4 +1,4 @@
-# Spectrum Analyzer
+# Freq-Peak
 
 A real-time audio spectrum analyzer built with Web Audio API, featuring live audio visualization, recording capabilities, and playback functionality.
 
@@ -45,8 +45,8 @@ A real-time audio spectrum analyzer built with Web Audio API, featuring live aud
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/yourusername/spectrum-analyzer.git
-   cd spectrum-analyzer
+   git clone https://github.com/eli-byers/Freq-Peak.git
+   cd Freq-Peak
    ```
 
 2. **Open in browser:**
@@ -56,14 +56,32 @@ A real-time audio spectrum analyzer built with Web Audio API, featuring live aud
    # Then open http://localhost:8000 in your browser
    ```
 
-3. **Or deploy to web server:**
+3. **Deploy to GitHub Pages:**
+   ```bash
+   # Push to GitHub repository
+   git add .
+   git commit -m "Initial commit"
+   git push origin main
+
+   # Enable GitHub Pages in repository settings
+   # Go to Settings → Pages → Source: Deploy from branch → Branch: main
+   ```
+
+   **GitHub Pages Notes:**
+   - ✅ HTTPS enabled automatically (required for microphone access)
+   - ✅ All paths are relative and will work correctly
+   - ✅ No build process needed (static files only)
+   - ✅ Custom domain support available
+   - ⚠️ GitHub Pages has a soft bandwidth limit (100GB/month free)
+
+4. **Or deploy to web server:**
    - Upload all files to your web server
    - Ensure HTTPS is enabled for microphone access
 
 ### Project Structure
 
 ```
-spectrum-analyzer/
+Freq-Peak/
 ├── index.html          # Main HTML file
 ├── style.css           # Application styles
 ├── js/                 # JavaScript modules
@@ -289,8 +307,8 @@ class AudioProcessor {
 
 1. **Fork and clone:**
    ```bash
-   git clone https://github.com/yourusername/spectrum-analyzer.git
-   cd spectrum-analyzer
+   git clone https://github.com/eli-byers/Freq-Peak.git
+   cd Freq-Peak
    ```
 
 2. **Install development dependencies:**
@@ -344,8 +362,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ### Contact
 
 - **Email**: your.email@example.com
-- **GitHub**: https://github.com/yourusername/spectrum-analyzer
-- **Website**: https://yourwebsite.com/spectrum-analyzer
+- **GitHub**: https://github.com/eli-byers/Freq-Peak
+- **Website**: https://freqpeak.com
 
 ---
 
