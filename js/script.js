@@ -462,6 +462,30 @@ toggleModeIndicatorCheckbox.addEventListener('change', () => {
   saveSettings();
 });
 
+// FFT Size change handler - dynamically update if live mode is running
+document.getElementById('fftSizeSelect').addEventListener('change', async () => {
+  if (audioHandler && audioHandler.isRunning()) {
+    console.log('FFT size changed while live mode is running - restarting with new FFT size');
+    const deviceId = document.getElementById('deviceSelect').value;
+    const newFftSize = parseInt(document.getElementById('fftSizeSelect').value);
+
+    // Stop current live mode
+    await audioHandler.stopLiveVisualization();
+
+    // Restart with new FFT size
+    const success = await audioHandler.startLiveVisualization(deviceId, newFftSize);
+    if (success) {
+      // Update spectrum graph with new analyser
+      spectrumGraph.setAudioContext(audioHandler.audioCtx, audioHandler.analyser, audioHandler.dataArray, audioHandler.bufferLength, audioHandler.source, true);
+      spectrumGraph.draw();
+      console.log('✅ Live mode restarted with new FFT size:', newFftSize);
+    } else {
+      console.error('❌ Failed to restart live mode with new FFT size');
+    }
+  }
+  saveSettings();
+});
+
 // Color change handlers
 liveLineColor.addEventListener('input', () => {
   if (spectrumGraph) {
