@@ -3,11 +3,21 @@
 <head>
   <meta charset="UTF-8" />
   <title>Spectrum Analyzer</title>
+  <link rel="icon" type="image/x-icon" href="favicon/favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="favicon/favicon-16x16.png">
+  <link rel="apple-touch-icon" href="favicon/apple-touch-icon.png">
+  <link rel="manifest" href="favicon/site.webmanifest">
   <link rel="stylesheet" href="style.css">
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 </head>
 <body>
   <div class="header">
-    <h1>Spectrum Analyzer</h1>
+    <div class="title-container">
+      <img src="favicon/android-chrome-192x192.png" alt="Spectrum Analyzer Logo" class="title-logo">
+      <h1>Spectrum Analyzer</h1>
+    </div>
     <div class="controls-container">
       <label>Input: <select id="deviceSelect" style="background: #444; color: #fff; padding: 5px; border: none; border-radius: 4px;"></select></label>
       <div class="audio-level" id="audioLevel">
@@ -22,18 +32,32 @@
         <span data-level="0" class="level-bar high-off"></span>
       </div>
       <input type="file" id="audioFileInput" accept="audio/*" style="display: none;">
-      <label for="audioFileInput" id="loadBtn" style="background: #17a2b8; color: #fff; border: none; padding: 10px; border-radius: 4px; cursor: pointer;">Load Audio</label>
       <button id="recordBtn" style="background: #dc3545; color: #fff; border: none; padding: 10px; border-radius: 4px; cursor: pointer;">Record</button>
-      <button id="startBtn" style="background: #28a745; color: #fff; border: none; padding: 10px; border-radius: 4px; cursor: pointer;">Start Live</button>
+      <button id="startBtn" class="icon-btn" title="Start Live Audio" style="background: #28a745;">
+        <i data-lucide="mic" class="lucide-icon"></i>
+      </button>
       <div class="header-buttons">
+      <button id="loadBtn" class="icon-btn" title="Import Audio File">
+        <i data-lucide="file-up" class="lucide-icon"></i>
+      </button>
         <div class="share-dropdown">
-          <button id="shareBtn" class="icon-btn" title="Share">📤</button>
+          <button id="shareBtn" class="icon-btn" title="Share">
+            <i data-lucide="share" class="lucide-icon"></i>
+          </button>
           <div id="shareDropdown" class="dropdown-content">
-            <button id="savePngBtn">📷 Save PNG</button>
-            <button id="saveCsvBtn">📊 Save Peak CSV</button>
+            <button id="savePngBtn">
+              <i data-lucide="camera" class="lucide-icon"></i>
+              Save PNG
+            </button>
+            <button id="saveCsvBtn">
+              <i data-lucide="file-text" class="lucide-icon"></i>
+              Save Peak CSV
+            </button>
           </div>
         </div>
-        <button id="settingsBtn" class="icon-btn" title="Settings">⚙️</button>
+        <button id="settingsBtn" class="icon-btn" title="Audio Settings">
+          <i data-lucide="settings" class="lucide-icon"></i>
+        </button>
       </div>
     </div>
   </div>

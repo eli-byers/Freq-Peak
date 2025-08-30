@@ -18,6 +18,18 @@ body {
   box-sizing: border-box;
   z-index: 1000;
 }
+.title-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.title-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+}
+
 .header h1 {
   margin: 0;
   color: #fff;
@@ -55,6 +67,19 @@ body {
   background: #555;
 }
 
+#startBtn .lucide-icon {
+  stroke: #fff !important; /* White icon for better visibility */
+  filter: drop-shadow(0 0 2px rgba(0,0,0,0.8)); /* Add shadow for contrast */
+}
+
+.lucide-icon {
+  width: 18px;
+  height: 18px;
+  stroke: #eee;
+  stroke-width: 2;
+  fill: none;
+}
+
 .share-dropdown {
   position: relative;
 }
@@ -69,7 +94,8 @@ body {
   border-radius: 4px;
   box-shadow: 0 4px 8px rgba(0,0,0,0.3);
   z-index: 1001;
-  min-width: 150px;
+  min-width: 180px;
+  white-space: nowrap;
 }
 
 .dropdown-content button {
@@ -82,6 +108,9 @@ body {
   text-align: left;
   font-size: 14px;
   transition: background-color 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .dropdown-content button:hover {
@@ -119,14 +148,7 @@ body {
   gap: 10px;
   align-items: center;
 }
-#settingsBtn {
-  padding: 10px;
-  background: #444;
-  color: #eee;
-  border: none;
-  cursor: pointer;
-  border-radius: 4px;
-}
+
 .overlay {
   display: none;
   position: fixed;

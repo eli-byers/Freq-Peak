@@ -463,7 +463,8 @@ async function startLiveVisualization() {
     peakHoldArray = new Float32Array(bufferLength).fill(-Infinity);
   }
   running = true;
-  startBtn.textContent = "Stop";
+  startBtn.innerHTML = '<i data-lucide="mic-off" class="lucide-icon"></i>';
+  startBtn.title = "Stop Live Audio";
   updateModeIndicator();
   draw();
 }
@@ -480,6 +481,18 @@ async function initApp() {
     playbackLine.style.display = 'block';
     playbackLine.style.opacity = '1';
     playbackLine.style.visibility = 'visible';
+  }
+
+  // Initialize Lucide icons
+  if (typeof lucide !== 'undefined') {
+    lucide.createIcons();
+  } else {
+    // Fallback: Initialize icons after a short delay to ensure library is loaded
+    setTimeout(() => {
+      if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+      }
+    }, 100);
   }
 }
 
@@ -562,7 +575,12 @@ startBtn.onclick = async () => {
       peakHoldArray = new Float32Array(bufferLength).fill(-Infinity);
     }
     running = true;
-    startBtn.textContent = "Stop Live";
+    startBtn.innerHTML = '<i data-lucide="mic-off" class="lucide-icon"></i>';
+    startBtn.title = "Stop Live Audio";
+    // Re-initialize Lucide icons after changing innerHTML
+    if (typeof lucide !== 'undefined') {
+      lucide.createIcons();
+    }
     updateModeIndicator();
     draw();
   } else {
@@ -572,7 +590,12 @@ startBtn.onclick = async () => {
     if (audioCtx) {
       audioCtx.close();
     }
-    startBtn.textContent = "Start Live";
+    startBtn.innerHTML = '<i data-lucide="mic" class="lucide-icon"></i>';
+    startBtn.title = "Start Live Audio";
+    // Re-initialize Lucide icons after changing innerHTML
+    if (typeof lucide !== 'undefined') {
+      lucide.createIcons();
+    }
     resetAudioLevel();
     updateModeIndicator();
   }
@@ -1279,7 +1302,8 @@ function createPlaybackBufferFromBlob(blob) {
         if (audioCtx && audioCtx.state !== 'closed') {
           audioCtx.close();
         }
-        startBtn.textContent = "Start Live";
+        startBtn.innerHTML = '<i data-lucide="mic" class="lucide-icon"></i>';
+        startBtn.title = "Start Live Audio";
         console.log('Stopped live mode - switching to Playback Ready mode');
       }
 
@@ -1351,6 +1375,11 @@ function startLiveMode() {
   // MediaRecorder setup happens in startBtn onclick
   return Promise.resolve();
 }
+
+// Upload button functionality
+document.getElementById('loadBtn').addEventListener('click', () => {
+  document.getElementById('audioFileInput').click();
+});
 
 // Share dropdown functionality
 const shareBtn = document.getElementById('shareBtn');
