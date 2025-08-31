@@ -20,20 +20,13 @@ const progressFill = document.getElementById('progressFill');
 const currentTime = document.getElementById('currentTime');
 const totalTime = document.getElementById('totalTime');
 
-// State machine for application modes
-const AppState = {
-  IDLE: 'Idle',
-  LIVE: 'Live Mode',
-  RECORDING: 'Recording Mode',
-  PLAYBACK_READY: 'Playback Mode',
-  PLAYING: 'Playback Mode'
-};
-
-let currentMode = AppState.IDLE;
-let showModeIndicator = false;
-const modeIndicator = document.createElement('div');
-modeIndicator.style.cssText = 'font-size: 12px; color: #ccc; padding: 5px 10px; background: #222; border-radius: 4px; display: none;';
-document.querySelector('.header').appendChild(modeIndicator);
+// Audio file loading and playback functionality
+let audioBuffer = null;
+let playbackSource = null;
+let isPlaying = false;
+let currentBufferPosition = 0; // Current position in audio buffer (seconds)
+let playbackStartTime = 0; // When playback started in AudioContext time
+let isPaused = false; // Track if we're in a paused state
 
 // High-quality WAV recording URL for downloads
 let recordedWavUrl = null;
@@ -50,7 +43,6 @@ const dbMax = document.getElementById('dbMax');
 const togglePeakHold = document.getElementById('togglePeakHold');
 const peakCount = document.getElementById('peakCount');
 const peakDelta = document.getElementById('peakDelta');
-const toggleModeIndicatorCheckbox = document.getElementById('toggleModeIndicator');
 const gridBrightness = document.getElementById('gridBrightness');
 const brightnessValue = document.getElementById('brightnessValue');
 const fontSizeSelect = document.getElementById('fontSizeSelect');
@@ -88,14 +80,6 @@ let waveformWidth, waveformHeight;
 // Create spectrum graph instance
 let spectrumGraph;
 
-// Audio file loading and playback functionality
-let audioBuffer = null;
-let playbackSource = null;
-let isPlaying = false;
-let currentBufferPosition = 0; // Current position in audio buffer (seconds)
-let playbackStartTime = 0; // When playback started in AudioContext time
-let isPaused = false; // Track if we're in a paused state
-
 // Import and initialize the appropriate audio handler
 async function initializeAudioHandler() {
   try {
@@ -112,44 +96,6 @@ async function initializeAudioHandler() {
     audioHandler = null;
     console.log('⚠️ Audio system not available - some features may not work');
   }
-}
-
-// Update mode indicator
-function updateModeIndicator() {
-  const previousMode = currentMode;
-
-  if (audioHandler && audioHandler.isRecording()) {
-    currentMode = AppState.RECORDING;
-  } else if (isPlaying) {
-    currentMode = AppState.PLAYING;
-  } else if (audioBuffer && playbackBar.style.display === 'flex') {
-    currentMode = AppState.PLAYBACK_READY;
-  } else if (audioHandler && audioHandler.isRunning()) {
-    currentMode = AppState.LIVE;
-  } else {
-    currentMode = AppState.IDLE;
-  }
-
-  if (previousMode !== currentMode) {
-    console.log(`Mode changed: ${previousMode} → ${currentMode}`);
-  }
-
-  modeIndicator.textContent = currentMode;
-  updateModeIndicatorVisibility();
-}
-
-function updateModeIndicatorVisibility() {
-  if (showModeIndicator) {
-    modeIndicator.style.display = 'block';
-  } else {
-    modeIndicator.style.display = 'none';
-  }
-}
-
-function toggleModeIndicator() {
-  showModeIndicator = !showModeIndicator;
-  updateModeIndicatorVisibility();
-  saveSettings();
 }
 
 // Axis type change handlers
@@ -191,7 +137,6 @@ function saveSettings() {
     peakDelta: peakDelta.value,
     fftSize: document.getElementById('fftSizeSelect').value,
     deviceId: document.getElementById('deviceSelect').value,
-    showModeIndicator: showModeIndicator,
     liveLineColor: liveLineColor.value,
     peakLineColor: peakLineColor.value,
     axisType: axisType,
@@ -223,11 +168,6 @@ function loadSettings() {
           select.value = settings.deviceId;
         }
       }, 100);
-    }
-    if (settings.showModeIndicator !== undefined) {
-      showModeIndicator = settings.showModeIndicator;
-      toggleModeIndicatorCheckbox.checked = showModeIndicator;
-      updateModeIndicatorVisibility();
     }
 
     // Load color settings
@@ -540,17 +480,11 @@ document.getElementById('saveCsvBtn').onclick = () => {
 
 // Settings button
 const settingsBtn = document.getElementById('settingsBtn');
-settingsBtn.addEventListener('change', () => {
-  showModeIndicator = settingsBtn.checked;
-  updateModeIndicatorVisibility();
-  saveSettings();
-});
-
-// Mode indicator toggle
-toggleModeIndicatorCheckbox.addEventListener('change', () => {
-  showModeIndicator = toggleModeIndicatorCheckbox.checked;
-  updateModeIndicatorVisibility();
-  saveSettings();
+settingsBtn.addEventListener('click', () => {
+  const overlay = document.querySelector('.overlay');
+  if (overlay) {
+    overlay.classList.add('active');
+  }
 });
 
 // FFT Size change handler - dynamically update if live mode is running
@@ -626,7 +560,6 @@ startBtn.onclick = async () => {
     progressFill.style.width = '0%';
     currentTime.textContent = '0:00';
     totalTime.textContent = '0:00';
-    updateModeIndicator();
   }
 
   if (!audioHandler.isRunning()) {
@@ -641,8 +574,6 @@ startBtn.onclick = async () => {
       const icon = startBtn.querySelector('.lucide-icon');
       icon.setAttribute('data-lucide', 'mic-off');
       if (typeof lucide !== 'undefined') lucide.createIcons();
-
-      updateModeIndicator();
 
       spectrumGraph.setAudioContext(audioHandler.audioCtx, audioHandler.analyser, audioHandler.dataArray, audioHandler.bufferLength, audioHandler.source, true);
       spectrumGraph.draw();
@@ -665,8 +596,6 @@ startBtn.onclick = async () => {
         const dbMinVal = parseFloat(dbMin.value);
         spectrumGraph.dataArray.fill(dbMinVal); // Set to the graph's minimum dB level
       }
-
-      updateModeIndicator();
     } else {
       console.error('Failed to stop live visualization');
     }
@@ -735,8 +664,6 @@ recordBtn.onclick = async () => {
 
         const icon = recordBtn.querySelector('.lucide-icon');
         icon.classList.add('recording-spin');
-
-        updateModeIndicator();
 
         if (spectrumGraph && audioHandler.audioCtx) {
           spectrumGraph.setAudioContext(
@@ -814,7 +741,6 @@ recordBtn.onclick = async () => {
           console.log('Stopped live mode - switching to Playback Ready mode');
         }
 
-        updateModeIndicator();
       } else {
         console.error('Recording failed or was cancelled');
         alert('Recording failed. Please try again.');
@@ -827,8 +753,6 @@ recordBtn.onclick = async () => {
 
       const icon = recordBtn.querySelector('.lucide-icon');
       icon.classList.remove('recording-spin');
-
-      updateModeIndicator();
 
       settingsBtn.disabled = false;
       settingsBtn.style.opacity = '1';
@@ -898,7 +822,6 @@ audioFileInput.onchange = async (event) => {
         console.log('Stopped live mode for file playback');
       }
 
-      updateModeIndicator();
     } catch (error) {
       console.error('❌ Error loading audio file:', error);
       console.error('Error details:', {
@@ -938,7 +861,6 @@ clearBtn.onclick = () => {
   totalTime.textContent = '0:00';
 
   spectrumGraph.drawStatic();
-  updateModeIndicator();
 };
 
 // Download button
@@ -1099,7 +1021,6 @@ playBtn.onclick = () => {
         isPaused = false; // Reset pause flag
         playBtn.style.display = 'inline-block';
         pauseBtn.style.display = 'none';
-        updateModeIndicator();
       };
 
       // Set playback start time and position
@@ -1136,7 +1057,6 @@ playBtn.onclick = () => {
       }
 
       isPlaying = true;
-      updateModeIndicator();
 
       if (audioHandler && audioHandler.peakHoldArray) {
         audioHandler.peakHoldArray.fill(-Infinity);
@@ -1186,9 +1106,6 @@ pauseBtn.onclick = () => {
     isPlaying = false;
     playBtn.style.display = 'inline-block';
     pauseBtn.style.display = 'none';
-
-    // Don't reset playback line - keep it at current position
-    updateModeIndicator();
   }
 };
 

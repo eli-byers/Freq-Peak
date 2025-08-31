@@ -173,26 +173,18 @@
         <div class="settings-section">
           <h3>Peak Settings</h3>
           <div>
-            <div>
-              <label><input type="checkbox" id="togglePeakHold" checked> Peak Hold</label>
-            </div>
+            <label>Peak Hold Line <input type="checkbox" id="togglePeakHold" checked></label>
+          </div>
+          <div style="margin-top: 15px;">
             <label>Peak Count: <input type="number" id="peakCount" value="5" min="1" max="20"></label>
             <label>Min Peak ΔHz: <input type="number" id="peakDelta" value="50" min="1" max="2000"></label>
           </div>
         </div>
         <div class="settings-section">
-          <h3>Display</h3>
+          <h3>Graph</h3>
           <div>
-            <label>Show Mode Indicator: <input type="checkbox" id="toggleModeIndicator"></label>
-          </div>
-          <div style="margin-top: 15px;">
-            <label>Axis Type:
-              <input type="radio" name="axisType" id="axisTypeHz" value="hz" checked> Hz
-              <input type="radio" name="axisType" id="axisTypeNote" value="note" style="margin-left: 10px;"> Note
-            </label>
-          </div>
-          <div style="margin-top: 15px;">
-            <label>Grid Brightness: <input type="range" id="gridBrightness" min="0" max="100" value="100" step="5"> <span id="brightnessValue">100%</span></label>
+            <label>Live Line: <input type="color" id="liveLineColor" value="#00ffff"></label>
+            <label>Peak Line: <input type="color" id="peakLineColor" value="#ffff00"></label>
           </div>
           <div style="margin-top: 15px;">
             <label>Font Size:
@@ -203,15 +195,16 @@
               </select>
             </label>
           </div>
-        </div>
-        <div class="settings-section">
-          <h3>Line Colors</h3>
-          <div>
-            <label>Live Line: <input type="color" id="liveLineColor" value="#00ffff"></label>
-            <label>Peak Line: <input type="color" id="peakLineColor" value="#ffff00"></label>
+          <div style="margin-top: 15px;">
+            <label>Grid Brightness: <input type="range" id="gridBrightness" min="0" max="100" value="100" step="5"> <span id="brightnessValue">100%</span></label>
+          </div>
+          <div style="margin-top: 15px;">
+            <label>X-Axis Grid:
+              <input type="radio" name="axisType" id="axisTypeHz" value="hz" checked> Hz
+              <input type="radio" name="axisType" id="axisTypeNote" value="note" style="margin-left: 10px;"> Note
+            </label>
           </div>
         </div>
-
       </div>
     </div>
   </div>
