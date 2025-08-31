@@ -107,6 +107,14 @@ class SpectrumGraph {
   // Set font size
   setFontSize(fontSize) {
     this.fontSize = fontSize || '12px';
+    // Calculate Y-axis offset based on font size
+    if (fontSize === 'medium') {
+      this.yAxisOffset = 25; // 20px default + 5px for medium
+    } else if (fontSize === 'large') {
+      this.yAxisOffset = 30; // 20px default + 5px for medium + 5px for large
+    } else {
+      this.yAxisOffset = 20; // 20px default for small
+    }
   }
 
   // Set audio context and analyser
@@ -176,8 +184,8 @@ class SpectrumGraph {
     this.ctx.strokeStyle = "#fff"; // Always white for axis lines
     this.ctx.lineWidth = 1;
     this.ctx.beginPath();
-    this.ctx.moveTo(32, 10);
-    this.ctx.lineTo(32, this.height - 52);
+    this.ctx.moveTo(32 + this.yAxisOffset, 10);
+    this.ctx.lineTo(32 + this.yAxisOffset, this.height - 52);
     this.ctx.lineTo(this.width - 32, this.height - 52);
     this.ctx.stroke();
   }
@@ -290,7 +298,7 @@ class SpectrumGraph {
       const db = dbMaxVal - (dbRange * i / numDbLines);
       const y = 10 + (1 - (db - dbMinVal) / dbRange) * (this.height - 62);
       this.ctx.textAlign = "right";
-      this.ctx.fillText(db.toFixed(0), 28, y + 2);
+      this.ctx.fillText(db.toFixed(0), 28 + this.yAxisOffset, y + 2);
     }
   }
 
@@ -356,7 +364,7 @@ class SpectrumGraph {
 
     this.ctx.save();
     this.ctx.beginPath();
-    this.ctx.rect(32, 10, this.width - 64, this.height - 62);
+    this.ctx.rect(32 + this.yAxisOffset, 10, this.width - 64 - this.yAxisOffset, this.height - 62);
     this.ctx.clip();
 
     this.drawAxes(freqMinVal, freqMaxVal, dbMinVal, dbMaxVal);
@@ -392,7 +400,7 @@ class SpectrumGraph {
     // Clip to graph area to prevent lines from overflowing
     this.ctx.save();
     this.ctx.beginPath();
-    this.ctx.rect(32, 10, this.width - 64, this.height - 62);
+    this.ctx.rect(32 + this.yAxisOffset, 10, this.width - 64 - this.yAxisOffset, this.height - 62);
     this.ctx.clip();
 
     this.drawAxes(freqMinVal, freqMaxVal, dbMinVal, dbMaxVal);
