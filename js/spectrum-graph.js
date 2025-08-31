@@ -17,6 +17,12 @@ class SpectrumGraph {
     this.peakHoldArray = [];
     this.latestPeaks = [];
 
+    // Freeze/scrub state
+    this.isFrozen = false;
+    this.isScrubbing = false;
+    this.justUnfroze = false; // Track if we just unfroze to preserve restored data
+    this.hasValidFrame = false; // First valid analyser frame not yet received
+
     // Settings references (will be set externally)
     this.freqMin = null;
     this.freqMax = null;
@@ -123,11 +129,30 @@ class SpectrumGraph {
     this.scrubSampleRate = sampleRate;
     this.scrubPosition = 0; // 0.0 to 1.0
     this.isScrubbing = true;
+    this.isFrozen = true; // Freeze the live spectrum when in scrub mode
   }
 
   // Set scrub position (0.0 to 1.0)
   setScrubPosition(position) {
     this.scrubPosition = Math.max(0, Math.min(1, position));
+  }
+
+  // Freeze the spectrum (stop live drawing)
+  freeze() {
+    this.isFrozen = true;
+    // Save current dataArray for restoration on resume
+    if (this.dataArray) {
+      this.frozenData = new Float32Array(this.dataArray);
+    }
+    console.log('🔄 Spectrum frozen - stopping live updates');
+  }
+
+  // Unfreeze the spectrum (resume live drawing)
+  unfreeze() {
+    this.isFrozen = false;
+    this.isScrubbing = false;
+    this.justUnfroze = true; // Prevent dataArray from being overwritten on first draw
+    console.log('🔄 Spectrum unfrozen - resuming live updates');
   }
 
   // Draw spectrum at current scrub position
@@ -219,6 +244,8 @@ class SpectrumGraph {
     if (this.peakHoldArray.length !== bufferLength) {
       this.peakHoldArray = new Float32Array(bufferLength).fill(-Infinity);
     }
+    // Reset valid frame flag whenever the audio context/analyser changes
+    this.hasValidFrame = false;
 
 
   }
@@ -472,7 +499,15 @@ class SpectrumGraph {
     // Continue the animation loop
     requestAnimationFrame(() => this.drawSpectrum(isLiveMode));
 
-    this.analyser.getFloatFrequencyData(this.dataArray);
+    // Only update audio data if not frozen and not just unfroze
+    if (!this.isFrozen && !this.justUnfroze) {
+      this.analyser.getFloatFrequencyData(this.dataArray);
+      this.hasValidFrame = true; // Mark that we have real analyser data now
+    }
+    // If frozen or just unfroze, keep using the existing dataArray (frozen spectrum)
+    if (this.justUnfroze) {
+      this.justUnfroze = false; // Reset flag after first preserved draw
+    }
 
     // Update audio level bars
     this.updateAudioLevelBars();
@@ -508,7 +543,7 @@ class SpectrumGraph {
       const y = 10 + (1 - (val - dbMinVal) / (dbMaxVal - dbMinVal)) * (this.height - 62);
       if (i === 0) this.ctx.moveTo(x, y);
       else this.ctx.lineTo(x, y);
-      if (this.togglePeakHold.checked && val > this.peakHoldArray[i]) this.peakHoldArray[i] = val;
+      if (this.togglePeakHold.checked && this.hasValidFrame && val > this.peakHoldArray[i]) this.peakHoldArray[i] = val;
     }
     this.ctx.strokeStyle = this.liveLineColor;
     this.ctx.lineWidth = 1;

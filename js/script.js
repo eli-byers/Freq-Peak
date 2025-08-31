@@ -31,6 +31,8 @@ let isPaused = false; // Track if we're in a paused state
 // Scrubbing functionality
 let isScrubbing = false; // Track if we're currently scrubbing
 let wasPlayingBeforeScrub = false; // Track if we were playing before scrubbing started
+let lastScrubUpdate = 0; // For throttling spectrum updates during scrubbing
+const SCRUB_THROTTLE_MS = 50; // Update spectrum every 50ms during scrubbing
 
 // High-quality WAV recording URL for downloads
 let recordedWavUrl = null;
@@ -106,6 +108,12 @@ async function initializeAudioHandler() {
     console.log('⚠️ Audio system not available - some features may not work');
   }
 }
+
+// Device selection change handler
+document.getElementById('deviceSelect').addEventListener('change', () => {
+  console.log('Device selection changed to:', document.getElementById('deviceSelect').value);
+  saveSettings();
+});
 
 // Axis type change handlers
 axisTypeHz.addEventListener('change', () => {
@@ -409,11 +417,9 @@ function getFrequencyDataFromAudioBuffer(audioBuffer, timePosition, fftSize = 20
     }
   }
 
-  // Apply Hann window to reduce spectral leakage
-  for (let i = 0; i < windowSize; i++) {
-    const windowValue = 0.5 * (1 - Math.cos(2 * Math.PI * i / (windowSize - 1)));
-    windowedData[i] *= windowValue;
-  }
+  // No windowing applied - using raw data for maximum accuracy
+  // windowedData remains unchanged from source - this gives the most accurate spectral representation
+  // Note: This may introduce spectral leakage/artifacts but preserves true frequency content
 
   // Perform FFT using Web Audio API
   try {
@@ -555,13 +561,56 @@ function initScrubbing() {
       isPlaying = false;
       playBtn.style.display = 'inline-block';
       pauseBtn.style.display = 'none';
+
+      // Freeze spectrum at current playback position
+      if (spectrumGraph && audioBuffer) {
+        const currentPercentage = currentBufferPosition / audioBuffer.duration;
+        spectrumGraph.setScrubMode(audioBuffer, audioBuffer.sampleRate);
+        spectrumGraph.setScrubPosition(currentPercentage);
+        spectrumGraph.drawScrub();
+        console.log('🔄 Spectrum frozen at pause position:', currentPercentage.toFixed(3));
+      }
     }
 
-    // Set up spectrum graph for scrubbing
-    spectrumGraph.setScrubMode(audioBuffer, audioBuffer.sampleRate);
+    // Set up spectrum graph for scrubbing - ensure it's not in live mode
+    if (spectrumGraph) {
+      console.log('🎯 Setting up spectrum for scrubbing mode');
 
-    // Initial scrub position
-    updateScrubPosition(e);
+      // Stop live drawing if it's running
+      if (spectrumGraph.isLiveMode) {
+        console.log('🔄 Stopping live spectrum drawing for scrubbing');
+        spectrumGraph.isLiveMode = false;
+        // Clear any animation frames
+        if (spectrumGraph.animationId) {
+          cancelAnimationFrame(spectrumGraph.animationId);
+          spectrumGraph.animationId = undefined;
+        }
+      }
+
+      // Set up scrub mode
+      spectrumGraph.setScrubMode(audioBuffer, audioBuffer.sampleRate);
+
+      // Force initial draw
+      const rect = waveformCanvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const clampedX = clamp(x, 0, rect.width);
+      const percentage = clampedX / rect.width;
+
+      // Get frequency data at this position and update spectrum
+      const timePosition = percentage * audioBuffer.duration;
+      const frequencyData = getFrequencyDataFromAudioBuffer(audioBuffer, timePosition);
+
+      // Update spectrum graph data array directly
+      if (spectrumGraph.dataArray && frequencyData) {
+        spectrumGraph.dataArray.set(frequencyData);
+        spectrumGraph.draw();
+        console.log('🎯 Initial scrub spectrum drawn at position:', percentage.toFixed(3), 'with', frequencyData.length, 'frequency bins');
+      } else {
+        spectrumGraph.setScrubPosition(percentage);
+        spectrumGraph.drawScrub();
+        console.log('🎯 Initial scrub spectrum drawn (fallback method) at position:', percentage.toFixed(3));
+      }
+    }
 
     // Add global mouse events
     document.addEventListener('mousemove', updateScrubPosition);
@@ -572,7 +621,11 @@ function initScrubbing() {
   function updateScrubPosition(e) {
     if (!isScrubbing || !audioBuffer) return;
 
-    const startTime = performance.now();
+    const now = performance.now();
+
+    // Throttle spectrum updates to improve performance
+    const shouldUpdateSpectrum = (now - lastScrubUpdate) >= SCRUB_THROTTLE_MS;
+
     const rect = waveformCanvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
 
@@ -591,10 +644,25 @@ function initScrubbing() {
     // Update time display
     currentTime.textContent = formatTime(currentBufferPosition);
 
-    // Update spectrum graph
-    const graphStartTime = performance.now();
-    spectrumGraph.setScrubPosition(percentage);
-    spectrumGraph.drawScrub();
+    // Update spectrum graph (throttled)
+    if (shouldUpdateSpectrum) {
+      // Get frequency data at this position and update spectrum directly
+      const timePosition = percentage * audioBuffer.duration;
+      const frequencyData = getFrequencyDataFromAudioBuffer(audioBuffer, timePosition);
+
+      // Update spectrum graph data array directly for immediate visual feedback
+      if (spectrumGraph.dataArray && frequencyData) {
+        spectrumGraph.dataArray.set(frequencyData);
+        spectrumGraph.draw();
+        console.log('🎯 Spectrum updated at scrub position:', percentage.toFixed(3), 'with', frequencyData.length, 'bins');
+      } else {
+        // Fallback to scrub mode methods
+        spectrumGraph.setScrubPosition(percentage);
+        spectrumGraph.drawScrub();
+        console.log('🎯 Spectrum updated (fallback) at scrub position:', percentage.toFixed(3));
+      }
+      lastScrubUpdate = now;
+    }
   }
 
   // Stop scrubbing
@@ -614,8 +682,56 @@ function initScrubbing() {
     console.log('🔄 Scrubbing ended at position:', currentBufferPosition.toFixed(2), 'seconds');
   }
 
-  // Add event listeners to waveform canvas (not playback line)
-  waveformCanvas.addEventListener('mousedown', startScrubbing);
+  // Add click-to-jump functionality to canvas (not just playback line)
+  let isDragging = false;
+  let dragStartTime = 0;
+
+  waveformCanvas.addEventListener('mousedown', (e) => {
+    isDragging = false; // Reset drag flag
+    dragStartTime = Date.now();
+
+    // Start scrubbing if we have audio
+    if (audioBuffer) {
+      startScrubbing(e);
+    }
+  });
+
+  waveformCanvas.addEventListener('mousemove', () => {
+    // If mouse moves more than a few pixels, consider it a drag
+    if (!isDragging && Date.now() - dragStartTime > 100) {
+      isDragging = true;
+    }
+  });
+
+  waveformCanvas.addEventListener('click', (e) => {
+    if (!audioBuffer || isDragging) return;
+
+    // Calculate click position and jump there
+    const rect = waveformCanvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const clampedX = clamp(x, 0, rect.width);
+    const percentage = clampedX / rect.width;
+
+    // Update position
+    currentBufferPosition = percentage * audioBuffer.duration;
+    playbackLine.style.setProperty('--playback-position', (percentage * 100) + '%');
+    currentTime.textContent = formatTime(currentBufferPosition);
+
+    // Update spectrum at new position
+    const timePosition = percentage * audioBuffer.duration;
+    const frequencyData = getFrequencyDataFromAudioBuffer(audioBuffer, timePosition);
+
+    if (spectrumGraph.dataArray && frequencyData) {
+      spectrumGraph.dataArray.set(frequencyData);
+      spectrumGraph.draw();
+      console.log('🎯 Click-jumped to position:', percentage.toFixed(3), 'with', frequencyData.length, 'bins');
+    }
+
+    console.log('🎯 Click-jumped to position:', currentBufferPosition.toFixed(2), 'seconds');
+
+    // Reset drag flag
+    isDragging = false;
+  });
 
   // Add visual feedback for draggable state
   waveformCanvas.addEventListener('mouseenter', () => {
@@ -1038,10 +1154,14 @@ audioFileInput.onchange = async (event) => {
         length: audioBuffer.length
       });
 
-      drawWaveform(audioBuffer);
-
+      // Make playback UI visible before drawing waveform so layout has non-zero size
       fileName.textContent = file.name;
       playbackBar.style.display = 'flex';
+
+      // Defer waveform draw to next frame after layout
+      requestAnimationFrame(() => {
+        drawWaveform(audioBuffer);
+      });
 
       const totalSeconds = audioBuffer.duration;
       totalTime.textContent = formatTime(totalSeconds);
@@ -1203,6 +1323,8 @@ playBtn.onclick = () => {
       analyser.smoothingTimeConstant = 0.0;
       const bufferLength = analyser.frequencyBinCount;
       const dataArray = new Float32Array(bufferLength);
+      // Keep all bins at -Infinity initially (below dbMin so graph shows silence)
+      dataArray.fill(-Infinity);
 
       if (playbackSource) {
         try {
@@ -1298,7 +1420,20 @@ playBtn.onclick = () => {
         audioHandler.peakHoldArray.fill(-Infinity);
       }
 
+      // Unfreeze the spectrum for live playback updates (don't change analysers)
+      if (spectrumGraph) {
+        spectrumGraph.unfreeze();
+      }
+
       spectrumGraph.setAudioContext(audioCtx, analyser, dataArray, bufferLength, playbackSource, false);
+
+      // Restore frozen data if available BEFORE drawing
+      if (spectrumGraph.frozenData && spectrumGraph.dataArray && spectrumGraph.frozenData.length === spectrumGraph.dataArray.length) {
+        spectrumGraph.dataArray.set(spectrumGraph.frozenData);
+        spectrumGraph.frozenData = null; // Clear it after restore
+        console.log('🔄 Restored frozen spectrum data for resume');
+      }
+
       spectrumGraph.drawPlayback();
 
       updateProgress();
@@ -1342,6 +1477,11 @@ pauseBtn.onclick = () => {
     isPlaying = false;
     playBtn.style.display = 'inline-block';
     pauseBtn.style.display = 'none';
+
+    // Freeze spectrum at current position (don't change modes or create new analysers)
+    if (spectrumGraph) {
+      spectrumGraph.freeze();
+    }
   }
 };
 
