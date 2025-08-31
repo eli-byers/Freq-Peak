@@ -141,8 +141,10 @@
       </div>
     </div>
     <div class="waveform-container">
-      <canvas id="waveformCanvas" width="800" height="80"></canvas>
-      <div id="playbackLine" class="playback-line" style="left: 0%;"></div>
+      <div class="waveform-wrapper">
+        <canvas id="waveformCanvas"></canvas>
+        <div id="playbackLine" class="playback-line"></div>
+      </div>
     </div>
   </div>
   <div class="overlay">
@@ -152,7 +154,14 @@
         <div class="settings-section">
           <h3>Audio Settings</h3>
           <div>
-            <label>FFT Size: <select id="fftSizeSelect"><option value="1024">1024</option><option value="2048" selected>2048</option><option value="4096">4096</option><option value="8192">8192</option><option value="16384">16384</option><option value="32768">32768</option></select></label>
+            <label>FFT Size: <select id="fftSizeSelect">
+              <option value="1024">1024</option>
+              <option value="2048" selected>2048</option>
+              <option value="4096">4096</option>
+              <option value="8192">8192</option>
+              <option value="16384">16384</option>
+              <option value="32768">32768</option>
+            </select></label>
           </div>
         </div>
         </div>

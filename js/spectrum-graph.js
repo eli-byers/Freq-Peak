@@ -117,6 +117,96 @@ class SpectrumGraph {
     }
   }
 
+  // Set up scrubbing mode with AudioBuffer
+  setScrubMode(audioBuffer, sampleRate) {
+    this.scrubAudioBuffer = audioBuffer;
+    this.scrubSampleRate = sampleRate;
+    this.scrubPosition = 0; // 0.0 to 1.0
+    this.isScrubbing = true;
+  }
+
+  // Set scrub position (0.0 to 1.0)
+  setScrubPosition(position) {
+    this.scrubPosition = Math.max(0, Math.min(1, position));
+  }
+
+  // Draw spectrum at current scrub position
+  drawScrub() {
+
+    if (!this.scrubAudioBuffer || !this.isScrubbing) {
+      this.drawStatic();
+      return;
+    }
+
+    // Calculate time position in seconds
+    const timePosition = this.scrubPosition * this.scrubAudioBuffer.duration;
+
+    // Get frequency data at this position
+    const fftSize = parseInt(document.getElementById('fftSizeSelect')?.value || '2048');
+
+    const frequencyData = getFrequencyDataFromAudioBuffer(
+      this.scrubAudioBuffer,
+      timePosition,
+      fftSize
+    );
+
+
+    this.ctx.fillStyle = "#111";
+    this.ctx.fillRect(0, 0, this.width, this.height);
+
+    const freqMinVal = parseFloat(this.freqMin.value);
+    const freqMaxVal = parseFloat(this.freqMax.value);
+    const dbMinVal = parseFloat(this.dbMin.value);
+    const dbMaxVal = parseFloat(this.dbMax.value);
+
+
+    // Clip to graph area
+    this.ctx.save();
+    this.ctx.beginPath();
+    const clipX = 32 + this.yAxisOffset;
+    const clipY = 10;
+    const clipWidth = this.width - 64 - this.yAxisOffset;
+    const clipHeight = this.height - 62;
+    this.ctx.rect(clipX, clipY, clipWidth, clipHeight);
+    this.ctx.clip();
+
+    this.drawAxes(freqMinVal, freqMaxVal, dbMinVal, dbMaxVal);
+    this.drawGrid(freqMinVal, freqMaxVal, dbMinVal, dbMaxVal);
+
+    const nyquist = this.scrubSampleRate / 2;
+
+    // Draw spectrum line from frequency data
+    this.ctx.beginPath();
+    let pointsDrawn = 0;
+    for (let i = 0; i < frequencyData.length; i++) {
+      const freq = i / frequencyData.length * nyquist;
+      if (freq < freqMinVal || freq > freqMaxVal) continue;
+
+      const x = 32 + (freq - freqMinVal) / (freqMaxVal - freqMinVal) * (this.width - 64);
+      const val = Math.max(frequencyData[i], dbMinVal);
+      const y = 10 + (1 - (val - dbMinVal) / (dbMaxVal - dbMinVal)) * (this.height - 62);
+
+      if (pointsDrawn === 0) {
+        this.ctx.moveTo(x, y);
+      } else {
+        this.ctx.lineTo(x, y);
+      }
+      pointsDrawn++;
+    }
+
+    this.ctx.strokeStyle = this.liveLineColor;
+    this.ctx.lineWidth = 2; // Make line thicker for debugging
+    this.ctx.stroke();
+
+    // DEBUG: Add a visible indicator that drawScrub was called
+    this.ctx.fillStyle = 'rgba(255, 0, 255, 0.5)'; // Magenta debug indicator
+    this.ctx.fillRect(10, 10, 20, 20);
+
+    this.ctx.restore(); // Restore from clip
+
+    this.drawLabels(freqMinVal, freqMaxVal, dbMinVal, dbMaxVal);
+  }
+
   // Set audio context and analyser
   setAudioContext(audioCtx, analyser, dataArray, bufferLength, source, isLiveMode = true) {
     this.audioCtx = audioCtx;

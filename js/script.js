@@ -28,6 +28,10 @@ let currentBufferPosition = 0; // Current position in audio buffer (seconds)
 let playbackStartTime = 0; // When playback started in AudioContext time
 let isPaused = false; // Track if we're in a paused state
 
+// Scrubbing functionality
+let isScrubbing = false; // Track if we're currently scrubbing
+let wasPlayingBeforeScrub = false; // Track if we were playing before scrubbing started
+
 // High-quality WAV recording URL for downloads
 let recordedWavUrl = null;
 let recordedBlob = null;
@@ -63,6 +67,11 @@ function frequencyToNote(freq) {
   const noteIndex = (semitonesFromA4 + 9) % 12; // A is at index 9 in our array
   const octave = Math.floor((semitonesFromA4 + 9) / 12) + 4;
   return noteNames[noteIndex] + octave;
+}
+
+// Maintain value within min and max
+function clamp(val, min, max) {
+  return Math.max(min, Math.min(val, max));
 }
 
 // Color settings elements
@@ -224,23 +233,54 @@ function resize() {
   height = canvas.clientHeight;
   canvas.width = width;
   canvas.height = height;
+
+  // Reposition playback line if audio buffer exists and line is visible
+  if (audioBuffer && playbackBar.style.display === 'flex') {
+    const playbackLine = document.getElementById('playbackLine');
+    if (playbackLine) {
+      const clampedPercentage = clamp(currentBufferPosition / audioBuffer.duration, 0, 1);
+      playbackLine.style.setProperty('--playback-position', (clampedPercentage * 100) + '%');
+      console.log('🔄 Repositioned playback line after resize:', (clampedPercentage * 100) + '%');
+    }
+
+    // Redraw waveform with new canvas dimensions
+    console.log('🔄 Redrawing waveform after resize');
+    drawWaveform(audioBuffer);
+  }
 }
 window.addEventListener('resize', resize);
 resize();
 
-// Initialize waveform canvas
-function initWaveformCanvas() {
-  waveformCanvas = document.getElementById('waveformCanvas');
-  if (waveformCanvas) {
-    waveformCtx = waveformCanvas.getContext('2d');
-    waveformWidth = waveformCanvas.width;
-    waveformHeight = waveformCanvas.height;
-  }
-}
-
-// Draw waveform visualization - attractive bar-based wave graph
+// Draw waveform visualization - sharp fixed-width bars
 function drawWaveform(audioBuffer) {
   if (!waveformCanvas || !waveformCtx || !audioBuffer) return;
+
+  // Get the actual rendered dimensions accounting for device pixel ratio
+  const rect = waveformCanvas.getBoundingClientRect();
+  const devicePixelRatio = window.devicePixelRatio || 1;
+
+  // Calculate actual rendered width in CSS pixels
+  const renderedWidth = rect.width;
+  const renderedHeight = rect.height;
+
+  // Set canvas internal dimensions to match rendered dimensions (accounting for device pixel ratio)
+  waveformCanvas.width = renderedWidth * devicePixelRatio;
+  waveformCanvas.height = renderedHeight * devicePixelRatio;
+
+  // Scale the context to account for device pixel ratio
+  waveformCtx.scale(devicePixelRatio, devicePixelRatio);
+
+  // Use the rendered dimensions for our calculations
+  const waveformWidth = renderedWidth;
+  const waveformHeight = renderedHeight;
+
+  // Ensure dimensions are valid
+  if (!waveformWidth || !waveformHeight || !isFinite(waveformWidth) || !isFinite(waveformHeight)) {
+    console.error('Invalid waveform canvas dimensions:', { waveformWidth, waveformHeight });
+    return;
+  }
+
+  console.log(`Waveform: ${waveformWidth.toFixed(0)}px wide, devicePixelRatio: ${devicePixelRatio}`);
 
   const channelData = audioBuffer.getChannelData(0);
   const samples = channelData.length;
@@ -249,22 +289,30 @@ function drawWaveform(audioBuffer) {
   waveformCtx.fillStyle = '#0a0a0a';
   waveformCtx.fillRect(0, 0, waveformWidth, waveformHeight);
 
-  // Find maximum amplitude for scaling (same as original)
+  // Find maximum amplitude for scaling
   let maxAmplitude = 0;
   for (let i = 0; i < samples; i++) {
     const absValue = Math.abs(channelData[i]);
     if (absValue > maxAmplitude) maxAmplitude = absValue;
   }
 
-  // Preserve original scaling formula
+  // Scaling factor
   const scale = maxAmplitude > 0.001 ? 1 / maxAmplitude : 1000;
 
-  // Calculate bar properties - sharp bars with exact alignment
-  const barCount = Math.min(200, Math.floor(waveformWidth / 3)); // Fewer bars for sharpness
-  const barWidth = Math.max(2, Math.floor(waveformWidth / barCount)); // Sharper bars (min 2px)
-  const barSpacing = Math.max(1, Math.floor((waveformWidth - barCount * barWidth) / (barCount + 1))); // Standard spacing
+  // Fixed-width bar approach for sharpness
+  const BAR_WIDTH = 3;  // Fixed width for pixel-perfect sharpness
+  const BAR_SPACING = 1; // Minimal spacing between bars
+  const totalBarWidth = BAR_WIDTH + BAR_SPACING;
+
+  // Calculate how many bars fit in available space
+  const availableWidth = waveformWidth - 20; // Leave 10px margin on each side
+  const barCount = Math.max(1, Math.floor(availableWidth / totalBarWidth));
+
+  // Calculate samples per bar for even distribution
+  const samplesPerBar = Math.floor(samples / barCount);
+
   const centerY = waveformHeight / 2;
-  const maxBarHeight = centerY - 5; // Leave 5px gap from top/bottom edges
+  const maxBarHeight = centerY - 4; // Leave small gap from edges
 
   // Create gradient for bars
   const gradient = waveformCtx.createLinearGradient(0, 0, 0, waveformHeight);
@@ -272,68 +320,45 @@ function drawWaveform(audioBuffer) {
   gradient.addColorStop(0.5, '#0080ff');  // Blue center
   gradient.addColorStop(1, '#00ffff');    // Cyan bottom
 
-  // Position bars using percentage-based alignment (matches playback indicator)
+  // Draw bars with fixed width and pixel-perfect positioning
   for (let barIndex = 0; barIndex < barCount; barIndex++) {
-    // Calculate exact bar position based on percentage (10px to waveformWidth-2px)
-    const barX = 10 + (barIndex / barCount) * (waveformWidth - 12);
-
-    // Calculate sample range for this bar (normal order: left = start, right = end)
-    const startSample = Math.floor((barIndex / barCount) * samples);
-    const endSample = Math.floor(((barIndex + 1) / barCount) * samples);
+    // Calculate sample range for this bar
+    const startSample = barIndex * samplesPerBar;
+    const endSample = Math.min((barIndex + 1) * samplesPerBar, samples);
 
     // Find min/max amplitude in this range
     let minAmp = 1;
     let maxAmp = -1;
-    let rmsSum = 0;
-    let sampleCount = 0;
 
     for (let i = startSample; i < endSample && i < samples; i++) {
       const sample = channelData[i];
       if (sample < minAmp) minAmp = sample;
       if (sample > maxAmp) maxAmp = sample;
-      rmsSum += sample * sample;
-      sampleCount++;
     }
 
-    // Calculate RMS for bar intensity
-    const rms = sampleCount > 0 ? Math.sqrt(rmsSum / sampleCount) : 0;
-
-    // Apply scaling (same formula as original)
+    // Apply scaling
     const scaledMin = minAmp * scale;
     const scaledMax = maxAmp * scale;
 
-    // Calculate bar height with 5px gap constraint
-    const rawBarHeight = Math.abs(scaledMax - scaledMin) * centerY;
-    const barHeight = Math.max(2, Math.min(rawBarHeight, maxBarHeight * 2)); // Constrain to max height
+    // Calculate bar position (pixel-perfect)
+    const barX = Math.round(10 + barIndex * totalBarWidth); // Round to nearest pixel
 
-    // Calculate bar position (symmetrical around center, with 5px gap)
-    const barTop = Math.max(5, centerY - (scaledMax * maxBarHeight)); // Don't go above 5px
-    const barBottom = Math.min(waveformHeight - 5, centerY - (scaledMin * maxBarHeight)); // Don't go below height-5px
+    // Calculate bar dimensions
+    const barTop = Math.max(4, centerY - (scaledMax * maxBarHeight));
+    const barBottom = Math.min(waveformHeight - 4, centerY - (scaledMin * maxBarHeight));
 
-    // Draw mirrored bars
-    waveformCtx.fillStyle = gradient;
-
-    // Top bar (above center)
+    // Draw top bar (above center)
     if (barTop < centerY) {
-      const topHeight = Math.min(centerY - barTop, maxBarHeight); // Constrain height
-      waveformCtx.fillRect(barX, barTop, barWidth, topHeight);
+      const topHeight = Math.min(centerY - barTop, maxBarHeight);
+      waveformCtx.fillStyle = gradient;
+      waveformCtx.fillRect(barX, barTop, BAR_WIDTH, topHeight);
     }
 
-    // Bottom bar (below center)
+    // Draw bottom bar (below center)
     if (barBottom > centerY) {
-      const bottomHeight = Math.min(barBottom - centerY, maxBarHeight); // Constrain height
-      waveformCtx.fillRect(barX, centerY, barWidth, bottomHeight);
-    }
-
-    // Add RMS-based glow effect for louder sections
-    if (rms > 0.1) {
-      waveformCtx.shadowColor = '#00ffff';
-      waveformCtx.shadowBlur = rms * 10;
-      // Use constrained positions for glow effect
-      const glowTop = Math.max(5, centerY - (scaledMax * maxBarHeight));
-      const glowHeight = Math.min(barHeight, maxBarHeight * 2);
-      waveformCtx.fillRect(barX, glowTop, barWidth, glowHeight);
-      waveformCtx.shadowBlur = 0;
+      const bottomHeight = Math.min(barBottom - centerY, maxBarHeight);
+      waveformCtx.fillStyle = gradient;
+      waveformCtx.fillRect(barX, centerY, BAR_WIDTH, bottomHeight);
     }
   }
 
@@ -351,6 +376,79 @@ function formatTime(seconds) {
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+// FFT utility for extracting frequency data from AudioBuffer at specific time
+function getFrequencyDataFromAudioBuffer(audioBuffer, timePosition, fftSize = 2048) {
+  if (!audioBuffer || timePosition < 0 || timePosition > audioBuffer.duration) {
+    return new Float32Array(fftSize / 2).fill(-Infinity);
+  }
+
+  const sampleRate = audioBuffer.sampleRate;
+  const channelData = audioBuffer.getChannelData(0); // Use first channel
+  const totalSamples = channelData.length;
+
+  // Calculate sample position
+  const samplePosition = Math.floor(timePosition * sampleRate);
+
+  // Extract window of samples around the position
+  const windowSize = fftSize;
+  const halfWindow = Math.floor(windowSize / 2);
+  const startSample = Math.max(0, samplePosition - halfWindow);
+
+  // Create windowed data array
+  const windowedData = new Float32Array(windowSize);
+
+  // Copy data with zero padding if needed
+  for (let i = 0; i < windowSize; i++) {
+    const sourceIndex = startSample + i;
+    if (sourceIndex < totalSamples && sourceIndex >= 0) {
+      windowedData[i] = channelData[sourceIndex];
+    } else {
+      windowedData[i] = 0; // Zero padding
+    }
+  }
+
+  // Apply Hann window to reduce spectral leakage
+  for (let i = 0; i < windowSize; i++) {
+    const windowValue = 0.5 * (1 - Math.cos(2 * Math.PI * i / (windowSize - 1)));
+    windowedData[i] *= windowValue;
+  }
+
+  // Perform FFT using Web Audio API
+  try {
+    // Create temporary audio context for FFT
+    const tempAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    // Create buffer source
+    const source = tempAudioCtx.createBufferSource();
+    const analysisBuffer = tempAudioCtx.createBuffer(1, windowSize, sampleRate);
+    analysisBuffer.getChannelData(0).set(windowedData);
+    source.buffer = analysisBuffer;
+
+    // Create analyser
+    const analyser = tempAudioCtx.createAnalyser();
+    analyser.fftSize = fftSize;
+    analyser.smoothingTimeConstant = 0.0;
+
+    // Connect and get frequency data
+    source.connect(analyser);
+    source.start(0);
+
+    // Get frequency data immediately
+    const frequencyData = new Float32Array(analyser.frequencyBinCount);
+    analyser.getFloatFrequencyData(frequencyData);
+
+    // Clean up
+    tempAudioCtx.close();
+
+    return frequencyData;
+
+  } catch (error) {
+    console.error('FFT analysis failed:', error);
+    // Fallback: return silence
+    return new Float32Array(fftSize / 2).fill(-Infinity);
+  }
 }
 
 // Initialize app
@@ -383,7 +481,11 @@ async function initApp() {
     }
   }
 
-  initWaveformCanvas();
+  // Initialize waveform canvas - CSS handles dimensions automatically
+  waveformCanvas = document.getElementById('waveformCanvas');
+  if (waveformCanvas) {
+    waveformCtx = waveformCanvas.getContext('2d');
+  }
 
   try {
     spectrumGraph = new SpectrumGraph('canvas');
@@ -398,7 +500,7 @@ async function initApp() {
 
     const playbackLine = document.getElementById('playbackLine');
     if (playbackLine) {
-      playbackLine.style.left = '10px';
+      playbackLine.style.setProperty('--playback-position', '0%');
       playbackLine.style.display = 'block';
       playbackLine.style.opacity = '1';
       playbackLine.style.visibility = 'visible';
@@ -422,6 +524,131 @@ async function initApp() {
 }
 
 initApp();
+
+// Scrubbing event handlers
+function initScrubbing() {
+  const playbackLine = document.getElementById('playbackLine');
+  const waveformCanvas = document.getElementById('waveformCanvas');
+
+  if (!playbackLine || !waveformCanvas) return;
+
+  // Start scrubbing
+  function startScrubbing(e) {
+    if (!audioBuffer) return;
+
+    e.preventDefault();
+    isScrubbing = true;
+    wasPlayingBeforeScrub = isPlaying;
+
+    // Stop playback if currently playing
+    if (isPlaying) {
+      console.log('⏸️ Stopping playback for scrubbing');
+      if (playbackSource) {
+        try {
+          playbackSource.stop();
+          playbackSource.disconnect();
+          playbackSource = null;
+        } catch (error) {
+          console.error('Error stopping playback source during scrub:', error);
+        }
+      }
+      isPlaying = false;
+      playBtn.style.display = 'inline-block';
+      pauseBtn.style.display = 'none';
+    }
+
+    // Set up spectrum graph for scrubbing
+    spectrumGraph.setScrubMode(audioBuffer, audioBuffer.sampleRate);
+
+    // Initial scrub position
+    updateScrubPosition(e);
+
+    // Add global mouse events
+    document.addEventListener('mousemove', updateScrubPosition);
+    document.addEventListener('mouseup', stopScrubbing);
+  }
+
+  // Update scrub position
+  function updateScrubPosition(e) {
+    if (!isScrubbing || !audioBuffer) return;
+
+    const startTime = performance.now();
+    const rect = waveformCanvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+
+    // Clamp mouse position to canvas bounds (0 to canvas width)
+    const clampedX = clamp(x, 0, rect.width)
+
+    // Calculate position as percentage (0.0 to 1.0)
+    const percentage = clampedX / rect.width;
+
+    // Update current buffer position
+    currentBufferPosition = percentage * audioBuffer.duration;
+
+    // Update playback line position using CSS variable
+    playbackLine.style.setProperty('--playback-position', (percentage * 100) + '%');
+
+    // Update time display
+    currentTime.textContent = formatTime(currentBufferPosition);
+
+    // Update spectrum graph
+    const graphStartTime = performance.now();
+    spectrumGraph.setScrubPosition(percentage);
+    spectrumGraph.drawScrub();
+  }
+
+  // Stop scrubbing
+  function stopScrubbing() {
+    if (!isScrubbing) return;
+
+    isScrubbing = false;
+
+    // Remove global mouse events
+    document.removeEventListener('mousemove', updateScrubPosition);
+    document.removeEventListener('mouseup', stopScrubbing);
+
+    // Reset spectrum graph to static mode
+    spectrumGraph.isScrubbing = false;
+    spectrumGraph.drawStatic();
+
+    console.log('🔄 Scrubbing ended at position:', currentBufferPosition.toFixed(2), 'seconds');
+  }
+
+  // Add event listeners to waveform canvas (not playback line)
+  waveformCanvas.addEventListener('mousedown', startScrubbing);
+
+  // Add visual feedback for draggable state
+  waveformCanvas.addEventListener('mouseenter', () => {
+    if (audioBuffer) {
+      waveformCanvas.style.cursor = 'ew-resize';
+      playbackLine.style.boxShadow = '0 0 8px rgba(255, 255, 0, 0.8)';
+    }
+  });
+
+  waveformCanvas.addEventListener('mouseleave', () => {
+    waveformCanvas.style.cursor = '';
+    playbackLine.style.boxShadow = '';
+  });
+}
+
+// Initialize scrubbing after app initialization
+setTimeout(initScrubbing, 100);
+
+// Spacebar play/pause functionality
+document.addEventListener('keydown', (e) => {
+  // Only handle spacebar if not in an input field
+  if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+    e.preventDefault(); // Prevent page scroll
+
+    if (isPlaying) {
+      // Pause if currently playing
+      pauseBtn.click();
+    } else if (audioBuffer) {
+      // Play if audio is loaded and not playing
+      playBtn.click();
+    }
+  }
+});
 
 // Event handlers
 
@@ -717,6 +944,15 @@ recordBtn.onclick = async () => {
           totalTime.textContent = formatTime(totalSeconds);
           currentTime.textContent = '0:00';
 
+          // Reset playback position for new recording
+          currentBufferPosition = 0;
+
+          // Update playback line position to start
+          const playbackLine = document.getElementById('playbackLine');
+          if (playbackLine) {
+            playbackLine.style.setProperty('--playback-position', '0%');
+          }
+
           // Draw waveform
           drawWaveform(audioBuffer);
 
@@ -855,7 +1091,7 @@ clearBtn.onclick = () => {
   fileName.textContent = '_';
   const playbackLine = document.getElementById('playbackLine');
   if (playbackLine) {
-    playbackLine.style.left = '10px';
+    playbackLine.style.setProperty('--playback-position', '0%');
   }
   currentTime.textContent = '0:00';
   totalTime.textContent = '0:00';
@@ -995,9 +1231,10 @@ playBtn.onclick = () => {
 
           // Prevent overshooting the end
           const clampedPosition = Math.min(currentPosition, totalSeconds);
-          const progressPercent = (clampedPosition / totalSeconds) * 100;
 
-          playbackLine.style.left = `calc(10px + ${progressPercent}% - 2px)`;
+          // Position line based on percentage within the waveform container
+          const percentage = clampedPosition / totalSeconds;
+          playbackLine.style.setProperty('--playback-position', (percentage * 100) + '%');
           currentTime.textContent = formatTime(clampedPosition);
         }
         if (isPlaying) {
@@ -1010,7 +1247,7 @@ playBtn.onclick = () => {
         if (!isPaused) {
           currentBufferPosition = 0; // Reset position when playback ends naturally
           console.log('🔄 Playback ended naturally, resetting position to 0');
-          playbackLine.style.left = 'calc(100% - 12px)'; // Move to end only for natural ending
+          playbackLine.style.setProperty('--playback-position', '100%'); // Move to end only for natural ending
           currentTime.textContent = totalTime.textContent;
         } else {
           console.log('🔄 Playback stopped for pause, keeping position at:', currentBufferPosition.toFixed(2));
@@ -1028,13 +1265,12 @@ playBtn.onclick = () => {
 
       // Set playback line position based on stored position
       if (currentBufferPosition > 0) {
-        const progressPercent = (currentBufferPosition / totalSeconds) * 100;
-        const leftPosition = Math.min(progressPercent, 100);
-        playbackLine.style.left = `calc(10px + ${leftPosition}% - 2px)`;
+        const percentage = currentBufferPosition / totalSeconds;
+        playbackLine.style.setProperty('--playback-position', (percentage * 100) + '%');
         currentTime.textContent = formatTime(currentBufferPosition);
         console.log('▶️ Resuming from position:', currentBufferPosition.toFixed(2), 'seconds');
       } else {
-        playbackLine.style.left = '10px';
+        playbackLine.style.setProperty('--playback-position', '0%');
         currentTime.textContent = '0:00';
       }
 
