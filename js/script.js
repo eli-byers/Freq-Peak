@@ -51,6 +51,8 @@ const togglePeakHold = document.getElementById('togglePeakHold');
 const peakCount = document.getElementById('peakCount');
 const peakDelta = document.getElementById('peakDelta');
 const toggleModeIndicatorCheckbox = document.getElementById('toggleModeIndicator');
+const gridBrightness = document.getElementById('gridBrightness');
+const brightnessValue = document.getElementById('brightnessValue');
 
 // Peak label type - now always matches axis type
 let peakLabelType = 'hz'; // Will be updated to match axis type
@@ -188,7 +190,8 @@ function saveSettings() {
     showModeIndicator: showModeIndicator,
     liveLineColor: liveLineColor.value,
     peakLineColor: peakLineColor.value,
-    axisType: axisType
+    axisType: axisType,
+    gridBrightness: gridBrightness.value
   };
   document.cookie = "spectrumSettings=" + JSON.stringify(settings) + "; path=/; max-age=31536000";
 }
@@ -239,6 +242,16 @@ function loadSettings() {
       } else if (axisType === 'note') {
         axisTypeHz.checked = false;
         axisTypeNote.checked = true;
+      }
+    }
+
+    // Load grid brightness setting
+    if (settings.gridBrightness !== undefined) {
+      const brightness = parseInt(settings.gridBrightness);
+      gridBrightness.value = brightness;
+      brightnessValue.textContent = brightness + '%';
+      if (spectrumGraph) {
+        spectrumGraph.setGridBrightness(brightness);
       }
     }
 
@@ -422,8 +435,12 @@ async function initApp() {
   try {
     spectrumGraph = new SpectrumGraph('canvas');
     spectrumGraph.setSettings(freqMin, freqMax, dbMin, dbMax, togglePeakHold, peakCount, peakDelta);
+
+    // Apply loaded settings to the spectrum graph
     spectrumGraph.setColors(liveLineColor.value, peakLineColor.value);
     spectrumGraph.setAxisType(axisType);
+    spectrumGraph.setPeakLabelType(axisType); // Ensure peak labels match axis type
+    spectrumGraph.setGridBrightness(parseInt(gridBrightness.value));
 
     const playbackLine = document.getElementById('playbackLine');
     if (playbackLine) {
@@ -433,6 +450,7 @@ async function initApp() {
       playbackLine.style.visibility = 'visible';
     }
 
+    // Force a redraw to apply all settings
     spectrumGraph.drawStatic();
   } catch (error) {
     console.error('Error initializing spectrum graph:', error);
@@ -556,6 +574,16 @@ liveLineColor.addEventListener('input', () => {
 peakLineColor.addEventListener('input', () => {
   if (spectrumGraph) {
     spectrumGraph.setColors(liveLineColor.value, peakLineColor.value);
+  }
+  saveSettings();
+});
+
+// Grid brightness change handler
+gridBrightness.addEventListener('input', () => {
+  const brightness = parseInt(gridBrightness.value);
+  brightnessValue.textContent = brightness + '%';
+  if (spectrumGraph) {
+    spectrumGraph.setGridBrightness(brightness);
   }
   saveSettings();
 });

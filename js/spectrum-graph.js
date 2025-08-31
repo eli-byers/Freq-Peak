@@ -28,7 +28,7 @@ class SpectrumGraph {
 
     // Color settings
     this.liveLineColor = '#00ffff'; // Default cyan
-    this.peakLineColor = '#ffff00'; // Default yellow
+    this.peakLineColor = '#ff0000'; // Default red
 
   // Peak label type
   this.peakLabelType = 'hz'; // 'hz' or 'note'
@@ -99,6 +99,11 @@ class SpectrumGraph {
     this.axisType = type;
   }
 
+  // Set grid brightness (0-100%)
+  setGridBrightness(brightness) {
+    this.gridBrightness = Math.max(0, Math.min(100, brightness));
+  }
+
   // Set audio context and analyser
   setAudioContext(audioCtx, analyser, dataArray, bufferLength, source, isLiveMode = true) {
     this.audioCtx = audioCtx;
@@ -162,7 +167,7 @@ class SpectrumGraph {
   }
 
   drawAxes(freqMinVal, freqMaxVal, dbMinVal, dbMaxVal) {
-    this.ctx.strokeStyle = "#444";
+    this.ctx.strokeStyle = "#fff"; // Always white for axis lines
     this.ctx.lineWidth = 1;
     this.ctx.beginPath();
     this.ctx.moveTo(32, 10);
@@ -172,7 +177,16 @@ class SpectrumGraph {
   }
 
   drawGrid(freqMin, freqMax, dbMin, dbMax) {
-    this.ctx.strokeStyle = "#333";
+    // Use brightness setting to control grid line opacity
+    const brightness = (this.gridBrightness !== undefined) ? this.gridBrightness : 50;
+
+    // If brightness is 0, don't draw any grid lines
+    if (brightness === 0) {
+      return;
+    }
+
+    const alpha = brightness / 100;
+    this.ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`; // White with variable opacity
     this.ctx.lineWidth = 0.5;
 
     if (this.axisType === 'note') {
