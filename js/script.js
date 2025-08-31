@@ -52,6 +52,24 @@ const peakCount = document.getElementById('peakCount');
 const peakDelta = document.getElementById('peakDelta');
 const toggleModeIndicatorCheckbox = document.getElementById('toggleModeIndicator');
 
+// Peak label type - now always matches axis type
+let peakLabelType = 'hz'; // Will be updated to match axis type
+
+// Axis type settings
+const axisTypeHz = document.getElementById('axisTypeHz');
+const axisTypeNote = document.getElementById('axisTypeNote');
+let axisType = 'hz'; // 'hz' or 'note'
+
+// Frequency to note conversion
+function frequencyToNote(freq) {
+  const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  const A4 = 440;
+  const semitonesFromA4 = Math.round(12 * Math.log2(freq / A4));
+  const noteIndex = (semitonesFromA4 + 9) % 12; // A is at index 9 in our array
+  const octave = Math.floor((semitonesFromA4 + 9) / 12) + 4;
+  return noteNames[noteIndex] + octave;
+}
+
 // Color settings elements
 const liveLineColor = document.getElementById('liveLineColor');
 const peakLineColor = document.getElementById('peakLineColor');
@@ -128,6 +146,33 @@ function toggleModeIndicator() {
   saveSettings();
 }
 
+// Axis type change handlers
+axisTypeHz.addEventListener('change', () => {
+  if (axisTypeHz.checked) {
+    axisType = 'hz';
+    peakLabelType = 'hz'; // Peak labels match axis type
+    console.log('Axis type set to Hz');
+    if (spectrumGraph) {
+      spectrumGraph.setAxisType('hz');
+      spectrumGraph.setPeakLabelType('hz');
+    }
+    saveSettings();
+  }
+});
+
+axisTypeNote.addEventListener('change', () => {
+  if (axisTypeNote.checked) {
+    axisType = 'note';
+    peakLabelType = 'note'; // Peak labels match axis type
+    console.log('Axis type set to Note');
+    if (spectrumGraph) {
+      spectrumGraph.setAxisType('note');
+      spectrumGraph.setPeakLabelType('note');
+    }
+    saveSettings();
+  }
+});
+
 // Save settings to cookie
 function saveSettings() {
   const settings = {
@@ -142,7 +187,8 @@ function saveSettings() {
     deviceId: document.getElementById('deviceSelect').value,
     showModeIndicator: showModeIndicator,
     liveLineColor: liveLineColor.value,
-    peakLineColor: peakLineColor.value
+    peakLineColor: peakLineColor.value,
+    axisType: axisType
   };
   document.cookie = "spectrumSettings=" + JSON.stringify(settings) + "; path=/; max-age=31536000";
 }
@@ -182,6 +228,18 @@ function loadSettings() {
     }
     if (settings.peakLineColor) {
       peakLineColor.value = settings.peakLineColor;
+    }
+
+    // Load axis type setting
+    if (settings.axisType) {
+      axisType = settings.axisType;
+      if (axisType === 'hz') {
+        axisTypeHz.checked = true;
+        axisTypeNote.checked = false;
+      } else if (axisType === 'note') {
+        axisTypeHz.checked = false;
+        axisTypeNote.checked = true;
+      }
     }
 
     setTimeout(() => {
@@ -365,6 +423,7 @@ async function initApp() {
     spectrumGraph = new SpectrumGraph('canvas');
     spectrumGraph.setSettings(freqMin, freqMax, dbMin, dbMax, togglePeakHold, peakCount, peakDelta);
     spectrumGraph.setColors(liveLineColor.value, peakLineColor.value);
+    spectrumGraph.setAxisType(axisType);
 
     const playbackLine = document.getElementById('playbackLine');
     if (playbackLine) {

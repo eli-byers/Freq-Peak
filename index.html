@@ -173,7 +173,9 @@
         <div class="settings-section">
           <h3>Peak Settings</h3>
           <div>
-            <label><input type="checkbox" id="togglePeakHold" checked> Peak Hold</label>
+            <div>
+              <label><input type="checkbox" id="togglePeakHold" checked> Peak Hold</label>
+            </div>
             <label>Peak Count: <input type="number" id="peakCount" value="5" min="1" max="20"></label>
             <label>Min Peak ΔHz: <input type="number" id="peakDelta" value="50" min="1" max="2000"></label>
           </div>
@@ -181,7 +183,13 @@
         <div class="settings-section">
           <h3>Display</h3>
           <div>
-            <label><input type="checkbox" id="toggleModeIndicator"> Show Mode Indicator</label>
+            <label>Show Mode Indicator: <input type="checkbox" id="toggleModeIndicator"></label>
+          </div>
+          <div style="margin-top: 15px;">
+            <label>Axis Type:
+              <input type="radio" name="axisType" id="axisTypeHz" value="hz" checked> Hz
+              <input type="radio" name="axisType" id="axisTypeNote" value="note" style="margin-left: 10px;"> Note
+            </label>
           </div>
         </div>
         <div class="settings-section">

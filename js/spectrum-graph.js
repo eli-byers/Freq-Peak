@@ -30,6 +30,39 @@ class SpectrumGraph {
     this.liveLineColor = '#00ffff'; // Default cyan
     this.peakLineColor = '#ffff00'; // Default yellow
 
+  // Peak label type
+  this.peakLabelType = 'hz'; // 'hz' or 'note'
+
+  // Axis type
+  this.axisType = 'hz'; // 'hz' or 'note'
+
+  // Frequency to note conversion
+  this.frequencyToNote = function(freq) {
+    // Handle edge cases that could cause NaN
+    if (!freq || freq <= 0 || !isFinite(freq)) {
+      return 'N/A';
+    }
+
+    const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    const A4 = 440;
+    const semitonesFromA4 = Math.round(12 * Math.log2(freq / A4));
+
+    // Check if calculation resulted in valid numbers
+    if (!isFinite(semitonesFromA4)) {
+      return 'N/A';
+    }
+
+    const noteIndex = (semitonesFromA4 + 9) % 12; // A is at index 9 in our array
+    const octave = Math.floor((semitonesFromA4 + 9) / 12) + 4;
+
+    // Ensure we have valid indices
+    if (noteIndex < 0 || noteIndex >= noteNames.length || !isFinite(octave)) {
+      return 'N/A';
+    }
+
+    return noteNames[noteIndex] + octave;
+  };
+
     // Resize and initialize
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -54,6 +87,16 @@ class SpectrumGraph {
   setColors(liveLineColor, peakLineColor) {
     this.liveLineColor = liveLineColor;
     this.peakLineColor = peakLineColor;
+  }
+
+  // Set peak label type
+  setPeakLabelType(type) {
+    this.peakLabelType = type;
+  }
+
+  // Set axis type
+  setAxisType(type) {
+    this.axisType = type;
   }
 
   // Set audio context and analyser
@@ -102,7 +145,17 @@ class SpectrumGraph {
       this.tooltip.style.display = "block";
       this.tooltip.style.left = (e.pageX + 10) + "px";
       this.tooltip.style.top = (e.pageY + 10) + "px";
-      this.tooltip.textContent = freq.toFixed(1) + " Hz, " + db.toFixed(1) + " dB";
+
+      // Show different tooltip content based on axis type
+      let tooltipText;
+      if (this.axisType === 'note') {
+        const noteName = this.frequencyToNote(freq);
+        tooltipText = noteName + " (" + freq.toFixed(1) + " Hz), " + db.toFixed(1) + " dB";
+      } else {
+        tooltipText = freq.toFixed(1) + " Hz, " + db.toFixed(1) + " dB";
+      }
+
+      this.tooltip.textContent = tooltipText;
     } else {
       this.tooltip.style.display = "none";
     }
@@ -122,19 +175,24 @@ class SpectrumGraph {
     this.ctx.strokeStyle = "#333";
     this.ctx.lineWidth = 0.5;
 
-    // Vertical grid lines (frequency)
-    const numFreqLines = 10;
-    const freqRange = freqMax - freqMin;
-    for (let i = 1; i < numFreqLines; i++) {
-      const f = freqMin + (freqRange * i / numFreqLines);
-      const x = 32 + (f - freqMin) / freqRange * (this.width - 64);
-      this.ctx.beginPath();
-      this.ctx.moveTo(x, 10);
-      this.ctx.lineTo(x, this.height - 52);
-      this.ctx.stroke();
+    if (this.axisType === 'note') {
+      // Draw note-based vertical grid lines
+      this.drawNoteGridLines(freqMin, freqMax);
+    } else {
+      // Draw frequency-based vertical grid lines
+      const numFreqLines = 10;
+      const freqRange = freqMax - freqMin;
+      for (let i = 1; i < numFreqLines; i++) {
+        const f = freqMin + (freqRange * i / numFreqLines);
+        const x = 32 + (f - freqMin) / freqRange * (this.width - 64);
+        this.ctx.beginPath();
+        this.ctx.moveTo(x, 10);
+        this.ctx.lineTo(x, this.height - 52);
+        this.ctx.stroke();
+      }
     }
 
-    // Horizontal grid lines (dB)
+    // Horizontal grid lines (dB) - always the same
     const numDbLines = 5;
     const dbRange = Math.abs(dbMin - dbMax) || 100;
     for (let i = 1; i < numDbLines; i++) {
@@ -147,12 +205,39 @@ class SpectrumGraph {
     }
   }
 
+  drawNoteGridLines(freqMin, freqMax) {
+    const A4 = 440;
+    const freqRange = freqMax - freqMin;
+
+    // Find the lowest note in our range
+    const minSemitonesFromA4 = Math.floor(12 * Math.log2(Math.max(freqMin, 1) / A4));
+    const maxSemitonesFromA4 = Math.ceil(12 * Math.log2(Math.min(freqMax, 20000) / A4));
+
+    // Draw grid lines for major notes and their sharps/flats (every 1 semitone, but only within range)
+    for (let semitones = minSemitonesFromA4; semitones <= maxSemitonesFromA4; semitones++) {
+      const noteFreq = A4 * Math.pow(2, semitones / 12);
+
+      // Only draw lines for frequencies within our display range
+      if (noteFreq >= freqMin && noteFreq <= freqMax && isFinite(noteFreq) && noteFreq > 0) {
+        const x = 32 + (noteFreq - freqMin) / freqRange * (this.width - 64);
+        this.ctx.beginPath();
+        this.ctx.moveTo(x, 10);
+        this.ctx.lineTo(x, this.height - 52);
+        this.ctx.stroke();
+      }
+    }
+  }
+
   drawLabels(freqMinVal, freqMaxVal, dbMinVal, dbMaxVal) {
     // Draw axis labels
     this.ctx.fillStyle = "#fff";
     this.ctx.font = "12px sans-serif";
     this.ctx.textAlign = "center";
-    this.ctx.fillText("Frequency (Hz)", this.width / 2, this.height - 10);
+
+    // Axis label depends on axis type
+    const axisLabel = this.axisType === 'note' ? "Note" : "Frequency (Hz)";
+    this.ctx.fillText(axisLabel, this.width / 2, this.height - 10);
+
     this.ctx.save();
     this.ctx.translate(12, this.height / 2);
     this.ctx.rotate(-Math.PI / 2);
@@ -163,17 +248,22 @@ class SpectrumGraph {
     this.ctx.fillStyle = "#fff";
     this.ctx.font = "12px sans-serif";
 
-    // Frequency grid labels (bottom)
-    const numFreqLines = 10;
-    const freqRange = freqMaxVal - freqMinVal;
-    for (let i = 1; i < numFreqLines; i++) {
-      const f = freqMinVal + (freqRange * i / numFreqLines);
-      const x = 32 + (f - freqMinVal) / freqRange * (this.width - 64);
-      this.ctx.textAlign = "center";
-      this.ctx.fillText(f >= 1000 ? (f / 1000).toFixed(1) + "k" : f.toFixed(0), x, this.height - 35);
+    if (this.axisType === 'note') {
+      // Draw note-based grid labels
+      this.drawNoteGridLabels(freqMinVal, freqMaxVal);
+    } else {
+      // Draw frequency-based grid labels
+      const numFreqLines = 10;
+      const freqRange = freqMaxVal - freqMinVal;
+      for (let i = 1; i < numFreqLines; i++) {
+        const f = freqMinVal + (freqRange * i / numFreqLines);
+        const x = 32 + (f - freqMinVal) / freqRange * (this.width - 64);
+        this.ctx.textAlign = "center";
+        this.ctx.fillText(f >= 1000 ? (f / 1000).toFixed(1) + "k" : f.toFixed(0), x, this.height - 35);
+      }
     }
 
-    // dB grid labels (left)
+    // dB grid labels (left) - always the same
     const numDbLines = 5;
     const dbRange = Math.abs(dbMinVal - dbMaxVal) || 100;
     for (let i = 1; i < numDbLines; i++) {
@@ -181,6 +271,36 @@ class SpectrumGraph {
       const y = 10 + (1 - (db - dbMinVal) / dbRange) * (this.height - 62);
       this.ctx.textAlign = "right";
       this.ctx.fillText(db.toFixed(0), 28, y + 2);
+    }
+  }
+
+  drawNoteGridLabels(freqMinVal, freqMaxVal) {
+    const A4 = 440;
+    const freqRange = freqMaxVal - freqMinVal;
+
+    // Find the lowest and highest notes in our range
+    const minSemitonesFromA4 = Math.floor(12 * Math.log2(Math.max(freqMinVal, 1) / A4));
+    const maxSemitonesFromA4 = Math.ceil(12 * Math.log2(Math.min(freqMaxVal, 20000) / A4));
+
+    // Draw labels for all notes, but only label major notes (no sharps/flats)
+    for (let semitones = minSemitonesFromA4; semitones <= maxSemitonesFromA4; semitones++) {
+      const noteFreq = A4 * Math.pow(2, semitones / 12);
+
+      // Additional validation to prevent N/A labels
+      if (noteFreq >= freqMinVal &&
+          noteFreq <= freqMaxVal &&
+          isFinite(noteFreq) &&
+          noteFreq > 0) {
+
+        const noteName = this.frequencyToNote(noteFreq);
+
+        // Only draw label if it's not N/A and doesn't contain a sharp/flat
+        if (noteName !== 'N/A' && !noteName.includes('#')) {
+          const x = 32 + (noteFreq - freqMinVal) / freqRange * (this.width - 64);
+          this.ctx.textAlign = "center";
+          this.ctx.fillText(noteName, x, this.height - 35);
+        }
+      }
     }
   }
 
@@ -300,7 +420,16 @@ class SpectrumGraph {
     this.latestPeaks.forEach(p => {
       const x = 32 + (p.freq - freqMinVal) / (freqMaxVal - freqMinVal) * (this.width - 64);
       const y = 10 + (1 - (p.db - dbMinVal) / (dbMaxVal - dbMinVal)) * (this.height - 62);
-      this.ctx.fillText(p.freq.toFixed(1) + "Hz", x, y - 5);
+
+      // Display label based on peakLabelType setting
+      let label;
+      if (this.peakLabelType === 'note') {
+        label = this.frequencyToNote(p.freq);
+      } else {
+        label = p.freq.toFixed(1) + "Hz";
+      }
+
+      this.ctx.fillText(label, x, y - 5);
     });
 
     this.ctx.restore(); // Restore from clip
