@@ -104,6 +104,11 @@ class SpectrumGraph {
     this.gridBrightness = Math.max(0, Math.min(100, brightness));
   }
 
+  // Set font size
+  setFontSize(fontSize) {
+    this.fontSize = fontSize || '12px';
+  }
+
   // Set audio context and analyser
   setAudioContext(audioCtx, analyser, dataArray, bufferLength, source, isLiveMode = true) {
     this.audioCtx = audioCtx;
@@ -150,6 +155,7 @@ class SpectrumGraph {
       this.tooltip.style.display = "block";
       this.tooltip.style.left = (e.pageX + 10) + "px";
       this.tooltip.style.top = (e.pageY + 10) + "px";
+      this.tooltip.style.fontSize = this.fontSize;
 
       // Show different tooltip content based on axis type
       let tooltipText;
@@ -245,7 +251,7 @@ class SpectrumGraph {
   drawLabels(freqMinVal, freqMaxVal, dbMinVal, dbMaxVal) {
     // Draw axis labels
     this.ctx.fillStyle = "#fff";
-    this.ctx.font = "12px sans-serif";
+    this.ctx.font = this.fontSize + " sans-serif";
     this.ctx.textAlign = "center";
 
     // Axis label depends on axis type
@@ -260,7 +266,7 @@ class SpectrumGraph {
 
     // Draw grid line labels
     this.ctx.fillStyle = "#fff";
-    this.ctx.font = "12px sans-serif";
+    this.ctx.font = this.fontSize + " sans-serif";
 
     if (this.axisType === 'note') {
       // Draw note-based grid labels
@@ -429,7 +435,7 @@ class SpectrumGraph {
     this.latestPeaks = this.getPeaksFromArray(this.peakHoldArray, freqMinVal, freqMaxVal, peakCountVal, peakDeltaVal);
 
     this.ctx.fillStyle = "#fff";
-    this.ctx.font = "12px sans-serif";
+    this.ctx.font = this.fontSize + " sans-serif";
     this.ctx.textAlign = "center";
     this.latestPeaks.forEach(p => {
       const x = 32 + (p.freq - freqMinVal) / (freqMaxVal - freqMinVal) * (this.width - 64);

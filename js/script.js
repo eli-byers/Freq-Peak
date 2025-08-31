@@ -53,6 +53,7 @@ const peakDelta = document.getElementById('peakDelta');
 const toggleModeIndicatorCheckbox = document.getElementById('toggleModeIndicator');
 const gridBrightness = document.getElementById('gridBrightness');
 const brightnessValue = document.getElementById('brightnessValue');
+const fontSizeSelect = document.getElementById('fontSizeSelect');
 
 // Peak label type - now always matches axis type
 let peakLabelType = 'hz'; // Will be updated to match axis type
@@ -191,7 +192,8 @@ function saveSettings() {
     liveLineColor: liveLineColor.value,
     peakLineColor: peakLineColor.value,
     axisType: axisType,
-    gridBrightness: gridBrightness.value
+    gridBrightness: gridBrightness.value,
+    fontSize: fontSizeSelect.value
   };
   document.cookie = "spectrumSettings=" + JSON.stringify(settings) + "; path=/; max-age=31536000";
 }
@@ -252,6 +254,14 @@ function loadSettings() {
       brightnessValue.textContent = brightness + '%';
       if (spectrumGraph) {
         spectrumGraph.setGridBrightness(brightness);
+      }
+    }
+
+    // Load font size setting
+    if (settings.fontSize) {
+      fontSizeSelect.value = settings.fontSize;
+      if (spectrumGraph) {
+        spectrumGraph.setFontSize(settings.fontSize);
       }
     }
 
@@ -441,6 +451,7 @@ async function initApp() {
     spectrumGraph.setAxisType(axisType);
     spectrumGraph.setPeakLabelType(axisType); // Ensure peak labels match axis type
     spectrumGraph.setGridBrightness(parseInt(gridBrightness.value));
+    spectrumGraph.setFontSize(fontSizeSelect.value);
 
     const playbackLine = document.getElementById('playbackLine');
     if (playbackLine) {
@@ -584,6 +595,15 @@ gridBrightness.addEventListener('input', () => {
   brightnessValue.textContent = brightness + '%';
   if (spectrumGraph) {
     spectrumGraph.setGridBrightness(brightness);
+  }
+  saveSettings();
+});
+
+// Font size change handler
+fontSizeSelect.addEventListener('change', () => {
+  const fontSize = fontSizeSelect.value;
+  if (spectrumGraph) {
+    spectrumGraph.setFontSize(fontSize);
   }
   saveSettings();
 });
