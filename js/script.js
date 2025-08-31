@@ -92,6 +92,9 @@ let spectrumGraph;
 let audioBuffer = null;
 let playbackSource = null;
 let isPlaying = false;
+let currentBufferPosition = 0; // Current position in audio buffer (seconds)
+let playbackStartTime = 0; // When playback started in AudioContext time
+let isPaused = false; // Track if we're in a paused state
 
 // Import and initialize the appropriate audio handler
 async function initializeAudioHandler() {
@@ -886,6 +889,9 @@ audioFileInput.onchange = async (event) => {
 
       console.log('File loaded - Duration:', totalSeconds.toFixed(2), 'seconds');
 
+      // Reset playback position for new file
+      currentBufferPosition = 0;
+
       if (audioHandler && audioHandler.isRunning()) {
         await audioHandler.stopLiveVisualization();
         startBtn.title = "Start Live Audio";
@@ -910,6 +916,7 @@ clearBtn.onclick = () => {
   audioBuffer = null;
   playbackSource = null;
   isPlaying = false;
+  currentBufferPosition = 0; // Reset playback position
 
   if (playbackSource) {
     try {
@@ -1007,6 +1014,7 @@ playBtn.onclick = () => {
   if (!audioBuffer) return;
 
   console.log('Playback started for audio buffer:', audioBuffer.duration, 'seconds');
+  console.log('   currentBufferPosition at play button click:', currentBufferPosition);
 
   let tempAudioCtx;
   if (!audioHandler || !audioHandler.audioCtx || audioHandler.audioCtx.state === 'closed') {
@@ -1030,6 +1038,7 @@ playBtn.onclick = () => {
   function playAudioBuffer(audioCtx) {
     try {
       console.log('Setting up playback...');
+      console.log('   currentBufferPosition at start of playAudioBuffer:', currentBufferPosition);
 
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = parseInt(document.getElementById('fftSizeSelect').value);
@@ -1058,11 +1067,16 @@ playBtn.onclick = () => {
 
       function updateProgress() {
         if (isPlaying && playbackSource) {
-          const currentProgress = audioCtx.currentTime - startTime;
-          const progressPercent = (currentProgress / totalSeconds) * 100;
-          const leftPosition = Math.min(progressPercent, 100);
-          playbackLine.style.left = `calc(10px + ${leftPosition}% - 2px)`;
-          currentTime.textContent = formatTime(currentProgress);
+          // Calculate current position: stored position + elapsed time since start
+          const elapsed = audioCtx.currentTime - playbackStartTime;
+          const currentPosition = currentBufferPosition + elapsed;
+
+          // Prevent overshooting the end
+          const clampedPosition = Math.min(currentPosition, totalSeconds);
+          const progressPercent = (clampedPosition / totalSeconds) * 100;
+
+          playbackLine.style.left = `calc(10px + ${progressPercent}% - 2px)`;
+          currentTime.textContent = formatTime(clampedPosition);
         }
         if (isPlaying) {
           requestAnimationFrame(updateProgress);
@@ -1070,18 +1084,57 @@ playBtn.onclick = () => {
       }
 
       playbackSource.onended = () => {
+        // Only reset position and move line to end if playback ended naturally (not paused)
+        if (!isPaused) {
+          currentBufferPosition = 0; // Reset position when playback ends naturally
+          console.log('🔄 Playback ended naturally, resetting position to 0');
+          playbackLine.style.left = 'calc(100% - 12px)'; // Move to end only for natural ending
+          currentTime.textContent = totalTime.textContent;
+        } else {
+          console.log('🔄 Playback stopped for pause, keeping position at:', currentBufferPosition.toFixed(2));
+          // Don't move the playback line when pausing - keep it at current position
+        }
+
         isPlaying = false;
+        isPaused = false; // Reset pause flag
         playBtn.style.display = 'inline-block';
         pauseBtn.style.display = 'none';
-        playbackLine.style.left = 'calc(100% - 12px)';
-        currentTime.textContent = totalTime.textContent;
         updateModeIndicator();
       };
 
-      let startTime = audioCtx.currentTime;
-      playbackLine.style.left = '10px';
+      // Set playback start time and position
+      playbackStartTime = audioCtx.currentTime;
 
-      playbackSource.start();
+      // Set playback line position based on stored position
+      if (currentBufferPosition > 0) {
+        const progressPercent = (currentBufferPosition / totalSeconds) * 100;
+        const leftPosition = Math.min(progressPercent, 100);
+        playbackLine.style.left = `calc(10px + ${leftPosition}% - 2px)`;
+        currentTime.textContent = formatTime(currentBufferPosition);
+        console.log('▶️ Resuming from position:', currentBufferPosition.toFixed(2), 'seconds');
+      } else {
+        playbackLine.style.left = '10px';
+        currentTime.textContent = '0:00';
+      }
+
+      // Start playback from stored position or beginning
+      console.log('▶️ Starting playback from position:', currentBufferPosition.toFixed(3), 'seconds');
+      console.log('   AudioBuffer duration:', audioBuffer.duration.toFixed(3), 'seconds');
+      console.log('   Position is within bounds:', currentBufferPosition >= 0 && currentBufferPosition < audioBuffer.duration);
+
+      try {
+        playbackSource.start(0, currentBufferPosition);
+        console.log('✅ AudioBufferSourceNode.start() called successfully');
+      } catch (error) {
+        console.error('❌ AudioBufferSourceNode.start() failed:', error);
+        console.error('   Error details:', {
+          name: error.name,
+          message: error.message,
+          currentBufferPosition: currentBufferPosition,
+          bufferDuration: audioBuffer.duration
+        });
+      }
+
       isPlaying = true;
       updateModeIndicator();
 
@@ -1106,7 +1159,21 @@ playBtn.onclick = () => {
 // Pause button
 pauseBtn.onclick = () => {
   if (isPlaying) {
+    // Store current playback position before stopping
     if (playbackSource) {
+      // Calculate current position: stored position + elapsed time since start
+      const audioCtx = playbackSource.context;
+      const elapsed = audioCtx.currentTime - playbackStartTime;
+      currentBufferPosition = currentBufferPosition + elapsed;
+
+      console.log('⏸️ Paused at position:', currentBufferPosition.toFixed(2), 'seconds');
+      console.log('   AudioContext time:', audioCtx.currentTime.toFixed(3));
+      console.log('   Playback start time:', playbackStartTime.toFixed(3));
+      console.log('   Elapsed time:', elapsed.toFixed(3));
+
+      // Set pause flag before stopping to prevent onended from resetting position
+      isPaused = true;
+
       try {
         playbackSource.stop();
         playbackSource.disconnect();
@@ -1115,15 +1182,12 @@ pauseBtn.onclick = () => {
         console.error('Error stopping playback source:', error);
       }
     }
+
     isPlaying = false;
     playBtn.style.display = 'inline-block';
     pauseBtn.style.display = 'none';
 
-    const playbackLine = document.getElementById('playbackLine');
-    if (playbackLine) {
-      playbackLine.style.left = '10px';
-    }
-
+    // Don't reset playback line - keep it at current position
     updateModeIndicator();
   }
 };
